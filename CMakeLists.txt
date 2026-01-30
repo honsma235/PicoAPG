@@ -36,6 +36,24 @@ pico_sdk_init()
 add_subdirectory(lib/mongoose)
 add_subdirectory(lib/libscpi)
 
+# Generate SCPI artifacts from YAML
+set(SCPI_YAML ${CMAKE_CURRENT_SOURCE_DIR}/scpi_server/scpi_commands.yaml)
+set(SCPI_GEN_H ${CMAKE_CURRENT_SOURCE_DIR}/scpi_server/scpi_commands_gen.h)
+set(SCPI_GEN_C ${CMAKE_CURRENT_SOURCE_DIR}/scpi_server/scpi_commands_gen.c)
+
+
+add_custom_command(
+    OUTPUT ${SCPI_GEN_H} ${SCPI_GEN_C}
+    COMMAND ${CMAKE_COMMAND} -E echo "Generating SCPI artifacts..."
+    COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_scpi_artifacts.py ${SCPI_YAML}
+    DEPENDS ${SCPI_YAML}
+    COMMENT "Generating SCPI code from YAML"
+    VERBATIM
+)
+
+# Mark the generated files
+set_source_files_properties(${SCPI_GEN_C} ${SCPI_GEN_H} PROPERTIES GENERATED TRUE)
+
 # Add executable. Default name is the project name, version 0.1
 add_executable(${PROJECT_NAME}
     main.c
@@ -43,6 +61,8 @@ add_executable(${PROJECT_NAME}
     usb_network/usb_descriptors.c
     scpi_server/scpi_server.c
     scpi_server/scpi-def.c
+    ${SCPI_GEN_C}
+    scpi_server/scpi_commands.c
     ${PICO_TINYUSB_PATH}/lib/networking/rndis_reports.c
 )
 
@@ -57,6 +77,7 @@ pico_enable_stdio_usb(${PROJECT_NAME} 0)
 target_link_libraries(${PROJECT_NAME}
         pico_stdlib
         pico_unique_id
+        pico_bootsel_via_double_reset
         tinyusb_device
         mongoose
         scpi
@@ -72,8 +93,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 
 pico_add_extra_outputs(${PROJECT_NAME})
 
-# Extra build flags (enable if needed)
-add_definitions(-DDUAL_CONFIG=1)
+# Extra build flags
+add_definitions(-DDUAL_CONFIG=1) # Enable dual usb stack config ECM + RNDIS
 
 target_link_options(${PROJECT_NAME} PUBLIC "-Wl,--print-memory-usage")
 target_compile_options(${PROJECT_NAME} PRIVATE -fstack-usage) # Adds stack usage files in build/CMakeFiles/PicoAPG.dir/… as .su files.

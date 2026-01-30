@@ -1,0 +1,170 @@
+---
+# Copyright (c) 2026 honsma235
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# See the repository LICENSE file for the full text.
+
+# SCPI Command Definitions
+# has_query: true auto-generates "?" query version
+# Commands with "?" in name are query-only
+# indices: list of indexed parameters with ranges
+
+
+- command: ":SOURce:PWM:MODE"
+  has_query: true
+  description: "Set/Query PWM operating mode"
+  details: "OFF: disables PWM; ONEPH: single phase; TWOPH: two-phase; THREEPH: three-phase"
+  params:
+    - name: "mode"
+      type: "enum"
+      values: ["OFF", "ONEPH", "TWOPH", "THREEPH"]
+      default: "OFF"
+  status: "planned"
+
+- command: ":SOURce:PWM:CONTrol"
+  has_query: true
+  description: "Set/Query control mode"
+  details: "DUTY: set DUTY cycle directly; MOD_ANGLE: set MODulation index & phase ANGLE; MOD_SPEED: set MODulation index & phase rotation SPEED; In ONEPH mode, only DUTY control is available."
+  params:
+    - name: "control"
+      type: "enum"
+      values: ["DUTY", "MOD_ANGLE", "MOD_SPEED"]
+      default: "DUTY"
+  status: "planned"
+
+- command: ":SOURce:PWM:FREQuency"
+  has_query: true
+  description: "Set/Query PWM carrier frequency"
+  details: "Frequency in Hz"
+  params:
+    - name: "frequency"
+      type: "float"
+      min: 1.0
+      max: 100000.0
+      default: 10000.0
+  status: "planned"
+
+- command: ":SOURce:PWM:ALIGNment"
+  has_query: true
+  description: "Set/Query PWM alignment"
+  details: "CENTER: center-aligned; EDGE: leading-edge aligned"
+  params:
+    - name: "alignment"
+      type: "enum"
+      values: ["CENTER", "EDGE"]
+      default: "CENTER"
+  status: "planned"
+
+- command: ":SOURce:PWM:DEADtime"
+  has_query: true
+  description: "Set/Query PWM deadtime"
+  details: "Deadtime in nanoseconds between switching"
+  params:
+    - name: "deadtime"
+      type: "uint"
+      min: 0
+      max: 10000
+      default: 1000
+  status: "planned"
+
+- command: ":SOURce:PWM:PHase<n>:DUTY"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "1-3"
+  description: "Set/Query duty-cycle"
+  details: "Use fraction (0.0 to 1.0); 0.0 = LS always on, 1.0 = HS always on"
+  params:
+    - name: "duty"
+      type: "float"
+      min: 0.0
+      max: 1.0
+      default: 0.5
+  status: "planned"
+
+- command: ":SOURce:PWM:MINDuty"
+  has_query: true
+  description: "Set/Query minimum duty cycle"
+  details: "Maximum is symmetrically limited to (1.0 - MIN); Will always be enforced, even in MOD control modes"
+  params:
+    - name: "min"
+      type: "float"
+      min: 0.0
+      max: 0.2
+      default: 0.05
+  status: "planned"
+
+- command: ":SOURce:PWM:MOD"
+  has_query: true
+  description: "Set/Query modulation index"
+  details: "Modulation index for SPWM (0.0 to 1.0); The generated duty cycle will be: 0.5 + 0.5 * MOD * sin(angle), but capped to respect MIN/MAX duty cycle."
+  params:
+    - name: "mod"
+      type: "float"
+      min: 0.0
+      max: 1.0
+      default: 0
+  status: "planned"
+
+- command: ":SOURce:PWM:ANGLE"
+  has_query: true
+  description: "Set/Query SPWM angle"
+  details: "Phase angle in degrees (wraps at 360°); 0° = Phase 1 high"
+  params:
+    - name: "angle"
+      type: "float"
+      default: 0
+  status: "planned"
+
+- command: ":SOURce:PWM:SPEED"
+  has_query: true
+  description: "Set/Query SPWM rotation speed"
+  details: "Rotation speed of SPWM phase in RPM"
+  params:
+    - name: "speed"
+      type: "float"
+      min: 0
+      max: 100000
+      default: 100
+  status: "planned"
+
+- command: ":SOURce:PWM:PHase<n>:LS"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "1-3"
+  description: "Set/Query low-side GPIO assignment"
+  details: "GPIO pin number"
+  params:
+    - name: "gpio"
+      type: "uint"
+      min: 0
+      max: 29
+      default: 0
+  status: "planned"
+
+- command: ":SOURce:PWM:PHase<n>:HS"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "1-3"
+  description: "Set/Query high-side GPIO assignment"
+  details: "GPIO pin number"
+  params:
+    - name: "gpio"
+      type: "uint"
+      min: 0
+      max: 29
+      default: 0
+  status: "planned"
+
+- command: ":SOURce:PWM:CHANnel:INVert"
+  has_query: true
+  description: "Set/Query PWM channel output inversion"
+  details: "ON: inverts output polarity; OFF: normal"
+  params:
+    - name: "invert"
+      type: "bool"
+      default: false
+  status: "planned"
+

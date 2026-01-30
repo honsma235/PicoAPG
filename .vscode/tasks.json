@@ -15,7 +15,25 @@
             "problemMatcher": "$gcc",
             "windows": {
                 "command": "${env:USERPROFILE}/.pico-sdk/ninja/v1.12.1/ninja.exe"
+            },
+            "runOptions": {
+                "reevaluateOnRerun": true
             }
+        },
+        {
+            "label": "Generate SCPI all",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "tools/generate_scpi_artifacts.py",
+                "scpi_server/scpi_commands.yaml",
+                "--force"
+            ],
+            "group": "build",
+            "presentation": {
+                "reveal": "always"
+            },
+            "problemMatcher": []
         },
         {
             "label": "Run Project",

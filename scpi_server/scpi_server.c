@@ -66,6 +66,7 @@ void scpi_server_init(struct mg_mgr *mgr) {
 
     scpi_context.user_context = &active_conn;
     active_conn.c = NULL;
+    
 
     /* Listen for TCP SCPI requests */
     tcp_listener_conn = mg_listen(mgr, SCPI_URL, tcp_ev_handler, NULL);

@@ -10,4 +10,4 @@ target_link_libraries(mongoose
 )
 
 # Prevent extreme optimization from breaking OTA
-target_compile_options(mongoose PRIVATE -fno-tree-loop-distribute-patterns)
+target_compile_options(mongoose PRIVATE -fno-tree-loop-distribute-patterns -fstack-usage)

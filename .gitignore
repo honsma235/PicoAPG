@@ -1,2 +1,3 @@
 build
 !.vscode/*
+tools/analyze_stack_usage.py

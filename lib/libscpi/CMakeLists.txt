@@ -17,3 +17,5 @@ target_include_directories(scpi PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/inc
 )
 
+target_compile_options(scpi PRIVATE -fstack-usage)
+target_compile_definitions(scpi PUBLIC USE_FULL_ERROR_LIST)
