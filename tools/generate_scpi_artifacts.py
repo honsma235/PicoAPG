@@ -144,11 +144,11 @@ def generate_response_formatting_code(ident, params):
         ptype = param.get("type", "")
         
         if ptype == "int":
-            lines.append(f"    scpi_gen_result_int(context, {param_name});")
+            lines.append(f"    SCPI_ResultInt32(context, (int32_t){param_name});")
         elif ptype == "uint":
-            lines.append(f"    scpi_gen_result_uint(context, {param_name});")
+            lines.append(f"    SCPI_ResultUInt32(context, (uint32_t){param_name});")
         elif ptype == "float":
-            lines.append(f"    scpi_gen_result_float(context, {param_name});")
+            lines.append(f"    SCPI_ResultFloat(context, {param_name});")
         elif ptype == "bool" or ptype == "boolean":
             lines.append(f"    SCPI_ResultBool(context, {param_name});")
         elif ptype == "enum":
@@ -558,20 +558,7 @@ def gen_c_handlers(docs, c_path):
     lines.append("}")
     lines.append("")
 
-    lines.append("static inline void scpi_gen_result_int(scpi_t *context, int value) {")
-    lines.append("    SCPI_ResultInt32(context, (int32_t)value);")
-    lines.append("}")
-    lines.append("")
 
-    lines.append("static inline void scpi_gen_result_uint(scpi_t *context, unsigned int value) {")
-    lines.append("    SCPI_ResultUInt32(context, (uint32_t)value);")
-    lines.append("}")
-    lines.append("")
-
-    lines.append("static inline void scpi_gen_result_float(scpi_t *context, float value) {")
-    lines.append("    SCPI_ResultFloat(context, value);")
-    lines.append("}")
-    lines.append("")
     
     # Generate choice lists for enum parameters (one per command with enum)
     lines.append("/* ============================================================================")
@@ -612,7 +599,7 @@ def gen_c_handlers(docs, c_path):
             for param in params:
                 pname = param.get("name", "")
                 lines.append(f"    (void){pname};")
-            lines.append(f"    return 0; /* Not implemented */")
+            lines.append(f"    return SCPI_ERROR_EXECUTION_ERROR; /* Not implemented */")
             lines.append(f"}}\n")
         else:
             ident = safe_ident(cmd)
@@ -639,7 +626,7 @@ def gen_c_handlers(docs, c_path):
                 for param in params:
                     pname = param.get("name", "")
                     lines.append(f"    (void){pname};")
-            lines.append(f"    return 0; /* Not implemented */")
+            lines.append(f"    return SCPI_ERROR_EXECUTION_ERROR; /* Not implemented */")
             lines.append(f"}}\n")
             
             # Query stub (if has_query)
@@ -659,7 +646,7 @@ def gen_c_handlers(docs, c_path):
                 for param in params:
                     pname = param.get("name", "")
                     lines.append(f"    (void){pname};")
-                lines.append(f"    return 0; /* Not implemented */")
+                lines.append(f"    return SCPI_ERROR_EXECUTION_ERROR; /* Not implemented */")
                 lines.append(f"}}\n")
     
     # SCPI handler implementations

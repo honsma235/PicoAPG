@@ -7,23 +7,33 @@
 
 /*
  * User SCPI command implementation
- * 
+ *
  * This file contains custom implementations for SCPI command handlers.
  * These functions override the weak stubs in scpi_commands_gen.c.
- * 
- * Implementation Pattern:
- * =====================
- * 
- * For SET commands:
- *   custom_setter_COMMAND_NAME: Apply the setting, return 1 on success or 0 on error
- *   custom_validator_COMMAND_NAME: (optional) Validate parsed params, return 1 or 0
- * 
- * For GET commands:
- *   custom_getter_COMMAND_NAME: Query the value, write response to buffer, return 1 or 0
- * 
- * For EVENT commands:
- *   custom_handler_COMMAND_NAME: Trigger action, return 1 on success or 0 on error
- * 
+ *
+ * Implementation Pattern
+ * ======================
+ *
+ * Naming:
+ *   - Function names are derived from the SCPI command tokens and are
+ *     fully upper-case (with indexed tokens preserved as PHASEN, etc.).
+ *
+ * Return conventions:
+ *   - Handlers shall return SCPI error codes (e.g. SCPI_ERROR_NO_ERROR
+ *     on success).
+ *
+ * SET/EVENT commands:
+ *   - Implement custom_<COMMAND>(params...)
+ *   - Apply settings or trigger the event and return a SCPI error code.
+ *
+ * QUERY commands ("?"):
+ *   - Implement custom_<COMMAND>_QUERY(out params...)
+ *   - Fill output parameters and return a SCPI error code.
+ *
+ * Indexed commands:
+ *   - The first parameter is a const unsigned int indices[] array.
+ *   - The number of indices matches the count of <n> tokens in the SCPI
+ *     command. Each value is already range-checked by the parser.
  */
 
 #include "scpi_commands_gen.h"
@@ -62,7 +72,7 @@ int custom_SOURCE_PWM_MODE(SOURCE_PWM_MODE_MODE_t mode) {
 int custom_SOURCE_PWM_MODE_QUERY(SOURCE_PWM_MODE_MODE_t *mode) {
     /* Fill in the response with current mode */
     *mode = pwm_mode;
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -84,12 +94,12 @@ int custom_SOURCE_PWM_FREQUENCY(float frequency) {
     
     /* TODO: Configure hardware PWM carrier frequency */
     
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_FREQUENCY_QUERY(float *frequency) {
     *frequency = pwm_frequency;
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -113,14 +123,14 @@ int custom_SOURCE_PWM_PHASEN_DUTY(const unsigned int indices[1], float duty) {
     
     /* TODO: Configure hardware with new duty cycle */
     
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_PHASEN_DUTY_QUERY(const unsigned int indices[1], float *duty) {
     unsigned int phase = indices[0];
     
     *duty = pwm_duty[phase];
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -141,12 +151,12 @@ int custom_SOURCE_PWM_ALIGNMENT(SOURCE_PWM_ALIGNMENT_ALIGNMENT_t alignment) {
     
     /* TODO: Configure PWM alignment on hardware */
     
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_ALIGNMENT_QUERY(SOURCE_PWM_ALIGNMENT_ALIGNMENT_t *alignment) {
     *alignment = pwm_alignment;
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -167,12 +177,12 @@ int custom_SOURCE_PWM_DEADTIME(unsigned int deadtime) {
     
     /* TODO: Configure deadtime on hardware */
     
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_DEADTIME_QUERY(unsigned int *deadtime) {
     *deadtime = pwm_deadtime;
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -193,12 +203,12 @@ int custom_SOURCE_PWM_CONTROL(SOURCE_PWM_CONTROL_CONTROL_t control) {
     
     /* TODO: Switch control mode */
     
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_CONTROL_QUERY(SOURCE_PWM_CONTROL_CONTROL_t *control) {
     *control = pwm_control;
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -217,12 +227,12 @@ int custom_SOURCE_PWM_MINDUTY(float min) {
     
     /* TODO: Apply minimum duty cycle constraint */
     
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_MINDUTY_QUERY(float *min) {
     *min = pwm_min_duty;
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -241,12 +251,12 @@ int custom_SOURCE_PWM_MOD(float mod) {
     
     /* TODO: Update SPWM modulation index */
     
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_MOD_QUERY(float *mod) {
     *mod = pwm_modulation_index;
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -265,12 +275,12 @@ int custom_SOURCE_PWM_ANGLE(float angle) {
     
     /* TODO: Update SPWM phase angle */
     
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_ANGLE_QUERY(float *angle) {
     *angle = pwm_angle;
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -289,12 +299,12 @@ int custom_SOURCE_PWM_SPEED(float speed) {
     
     /* TODO: Update SPWM rotation speed */
     
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_SPEED_QUERY(float *speed) {
     *speed = pwm_rotation_speed;
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -318,13 +328,13 @@ int custom_SOURCE_PWM_PHASEN_LS(const unsigned int indices[1], unsigned int gpio
     
     /* TODO: Configure GPIO assignments on hardware */
     
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_PHASEN_LS_QUERY(const unsigned int indices[1], unsigned int *gpio) {
     unsigned int phase = indices[0];
     *gpio = pwm_ls_gpio[phase];
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_PHASEN_HS(const unsigned int indices[1], unsigned int gpio) {
@@ -333,13 +343,13 @@ int custom_SOURCE_PWM_PHASEN_HS(const unsigned int indices[1], unsigned int gpio
     
     /* TODO: Configure GPIO assignments on hardware */
     
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_PHASEN_HS_QUERY(const unsigned int indices[1], unsigned int *gpio) {
     unsigned int phase = indices[0];
     *gpio = pwm_hs_gpio[phase];
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
 
@@ -360,11 +370,11 @@ int custom_SOURCE_PWM_CHANNEL_INVERT(bool invert) {
     
     /* TODO: Configure channel output inversion on hardware */
     
-    return 1;  /* Success */
+    return SCPI_ERROR_NO_ERROR;
 }
 
 int custom_SOURCE_PWM_CHANNEL_INVERT_QUERY(bool *invert) {
     *invert = pwm_channel_invert;
-    return 1;
+    return SCPI_ERROR_NO_ERROR;
 }
 
