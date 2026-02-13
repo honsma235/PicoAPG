@@ -5,13 +5,15 @@
  * See the repository LICENSE file for the full text.
  */
 
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "mongoose.h"
+#include "pwm/pwm_config.h"
+#include "pwm/pwm_gpio.h"
+#include "scpi-def.h"
 #include "scpi/scpi.h"
 #include "scpi_server.h"
-#include "scpi-def.h"
 
 /*
  * This server uses the global `scpi_context`, `scpi_input_buffer` and
@@ -21,14 +23,14 @@
  * responses over TCP.
  */
 
-
 /* TCP endpoint for SCPI: All interfaces, default SCPI port */
 static const char SCPI_URL[] = "tcp://0.0.0.0:5025";
 /* HTTP endpoint for SCPI: All interfaces, port 80, /scpi path */
 static const char SCPI_HTTP_URL[] = "http://0.0.0.0:80/scpi";
 
 /* Per-target representation: either a TCP connection or an HTTP request target */
-enum scpi_target_kind { SCPI_TARGET_TCP = 0, SCPI_TARGET_HTTP = 1 };
+enum scpi_target_kind { SCPI_TARGET_TCP = 0,
+                        SCPI_TARGET_HTTP = 1 };
 
 struct scpi_target {
     enum scpi_target_kind kind;
@@ -48,11 +50,11 @@ static void http_ev_handler(struct mg_connection *c, int ev, void *ev_data);
 static void close_connection(struct mg_connection *c);
 
 /* SCPI interface functions referenced by scpi-def.c */
-size_t SCPI_Write(scpi_t * context, const char * data, size_t len);
-int SCPI_Error(scpi_t * context, int_fast16_t err);
-scpi_result_t SCPI_Control(scpi_t * context, scpi_ctrl_name_t ctrl, scpi_reg_val_t val);
-scpi_result_t SCPI_Reset(scpi_t * context);
-scpi_result_t SCPI_Flush(scpi_t * context);
+size_t SCPI_Write(scpi_t *context, const char *data, size_t len);
+int SCPI_Error(scpi_t *context, int_fast16_t err);
+scpi_result_t SCPI_Control(scpi_t *context, scpi_ctrl_name_t ctrl, scpi_reg_val_t val);
+scpi_result_t SCPI_Reset(scpi_t *context);
+scpi_result_t SCPI_Flush(scpi_t *context);
 
 void scpi_server_init(struct mg_mgr *mgr) {
     /* Initialize SCPI global context with buffers from scpi-def.c */
@@ -66,7 +68,6 @@ void scpi_server_init(struct mg_mgr *mgr) {
 
     scpi_context.user_context = &active_conn;
     active_conn.c = NULL;
-    
 
     /* Listen for TCP SCPI requests */
     tcp_listener_conn = mg_listen(mgr, SCPI_URL, tcp_ev_handler, NULL);
@@ -107,12 +108,13 @@ static void tcp_ev_handler(struct mg_connection *c, int ev, void *ev_data) {
         size_t n = c->recv.len;
         if (n > 0) {
             SCPI_Input(&scpi_context, (char *)c->recv.buf, (int)n);
-            c->recv.len = 0;                  // Tell Mongoose we've consumed data
+            c->recv.len = 0; // Tell Mongoose we've consumed data
         }
     } break;
 
     case MG_EV_CLOSE:
-        if (active_conn.c == c) active_conn.c = NULL;
+        if (active_conn.c == c)
+            active_conn.c = NULL;
         break;
 
     default:
@@ -134,21 +136,28 @@ static void http_ev_handler(struct mg_connection *c, int ev, void *ev_data) {
         active_conn.c = c;
         scpi_context.user_context = &active_conn;
 
-        struct mg_http_message *hm = (struct mg_http_message *) ev_data;
+        struct mg_http_message *hm = (struct mg_http_message *)ev_data;
         /* Feed request body (or query parameter "cmd") to SCPI */
         if (hm->body.len > 0) {
-            SCPI_Input(&scpi_context, hm->body.buf, hm->body.len);
-        } else if (hm->query.len > 0) {
-            // todo: if we increase buffer size in future, we may need to allocate this dynamically
-            char query_buf[SCPI_INPUT_BUFFER_LENGTH] = "";
-            int l = mg_http_get_var(&hm->query, "cmd", query_buf, sizeof(query_buf));
-            if (l > 0) {
-                SCPI_Input(&scpi_context, query_buf, l);
-            } else {
-                /* Missing "cmd" parameter */
-                mg_http_reply(c, 400, "Content-Type: plain/text\r\n", "Missing 'cmd' parameter\r\n");
+            if (hm->body.len > SCPI_INPUT_BUFFER_LENGTH) {
+                mg_http_reply(c, 413, "Content-Type: text/plain\r\n", "Command too long\r\n");
                 break;
             }
+            SCPI_Input(&scpi_context, hm->body.buf, (int)hm->body.len);
+        } else if (hm->query.len > 0) {
+            /* Use query param 'cmd'. Reject if missing or would overflow buffer. */
+            // todo: if we increase buffer size in future, we may need to allocate this dynamically instead of on stack
+            char query_buf[SCPI_INPUT_BUFFER_LENGTH] = "";
+            int l = mg_http_get_var(&hm->query, "cmd", query_buf, sizeof(query_buf));
+            if (l < 0) {
+                mg_http_reply(c, 400, "Content-Type: text/plain\r\n", "Missing or invalid 'cmd' parameter\r\n");
+                break;
+            }
+            if (l >= (int)sizeof(query_buf)) {
+                mg_http_reply(c, 413, "Content-Type: text/plain\r\n", "Command too long\r\n");
+                break;
+            }
+            SCPI_Input(&scpi_context, query_buf, l);
         }
         SCPI_Input(&scpi_context, SCPI_LINE_ENDING, 1); // Terminate command
 
@@ -159,7 +168,7 @@ static void http_ev_handler(struct mg_connection *c, int ev, void *ev_data) {
         } else {
             /* Check if there is data in your output buffer to decide between 200 and 204 */
             if (c->send.len > 0) {
-                mg_http_write_chunk(c, "", 0);  /* Final empty chunk */
+                mg_http_write_chunk(c, "", 0); /* Final empty chunk */
             } else {
                 mg_http_reply(c, 204, "", ""); /* No Content */
             }
@@ -168,7 +177,8 @@ static void http_ev_handler(struct mg_connection *c, int ev, void *ev_data) {
 
     case MG_EV_CLOSE:
         /* Final notification: triggered whenever a connection is closed */
-        if (active_conn.c == c) active_conn.c = NULL;
+        if (active_conn.c == c)
+            active_conn.c = NULL;
         break;
 
     default:
@@ -178,28 +188,31 @@ static void http_ev_handler(struct mg_connection *c, int ev, void *ev_data) {
 
 static void http_start_chunk(struct mg_connection *c, int code, const char *code_str, const char *headers) {
     mg_printf(c, "HTTP/1.1 %d %s\r\n%sTransfer-Encoding: chunked\r\n\r\n", code,
-            code_str, headers == NULL ? "" : headers);
+              code_str, headers == NULL ? "" : headers);
 }
 
-
 static void close_connection(struct mg_connection *c) {
-    if (!c) return;
+    if (!c)
+        return;
     /* Flush parser state and mark previous connection draining */
     SCPI_Input(&scpi_context, NULL, 0);
     c->is_draining = 1;
 }
 
-
 /* ---------------------- SCPI interface functions ----------------------- */
 
-size_t SCPI_Write(scpi_t * context, const char * data, size_t len) {
-    if (!context) return 0;
+size_t SCPI_Write(scpi_t *context, const char *data, size_t len) {
+    if (!context)
+        return 0;
     struct scpi_target *t = (struct scpi_target *)context->user_context;
-    if (!t) return 0;
-    if (!t->c) return 0;
-        
+    if (!t)
+        return 0;
+    if (!t->c)
+        return 0;
+
     if (t->kind == SCPI_TARGET_TCP) {
-        if (!mg_send(t->c, data, len)) return 0;
+        if (!mg_send(t->c, data, len))
+            return 0;
         return len;
     } else {
         /* HTTP: if buffer still empty, print HTTP response line first */
@@ -211,22 +224,26 @@ size_t SCPI_Write(scpi_t * context, const char * data, size_t len) {
     }
 }
 
-int SCPI_Error(scpi_t * context, int_fast16_t err) {
+int SCPI_Error(scpi_t *context, int_fast16_t err) {
     (void)context;
     return (int)err;
 }
 
-scpi_result_t SCPI_Control(scpi_t * context, scpi_ctrl_name_t ctrl, scpi_reg_val_t val) {
-    (void)context; (void)ctrl; (void)val;
-    return SCPI_RES_OK;
-}
-
-scpi_result_t SCPI_Reset(scpi_t * context) {
+scpi_result_t SCPI_Control(scpi_t *context, scpi_ctrl_name_t ctrl, scpi_reg_val_t val) {
     (void)context;
+    (void)ctrl;
+    (void)val;
     return SCPI_RES_OK;
 }
 
-scpi_result_t SCPI_Flush(scpi_t * context) {
+scpi_result_t SCPI_Reset(scpi_t *context) {
+    (void)context;
+    pwm_config_reset_to_defaults();
+    pwm_gpio_apply_output_state();
+    return SCPI_RES_OK;
+}
+
+scpi_result_t SCPI_Flush(scpi_t *context) {
     (void)context;
     return SCPI_RES_OK;
 }

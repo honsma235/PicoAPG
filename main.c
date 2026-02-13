@@ -7,10 +7,13 @@
 
 #include <stdio.h>
 #include <pico/stdlib.h>
+#include <pico/multicore.h>
 
 #include "mongoose.h"
 #include "usb_network/usb_network.h"
 #include "scpi_server/scpi_server.h"
+#include "pwm/pwm_config.h"
+#include "pwm/pwm_core1.h"
 
 
 int main()
@@ -20,6 +23,12 @@ int main()
     struct mg_mgr mgr;
     mg_mgr_init(&mgr); // Initialize Mongoose manager
     usb_network_init(&mgr);
+    
+    // Initialize PWM configuration with defaults
+    pwm_config_init();
+    
+    // Launch Core1 to execute PWM control loop
+    multicore_launch_core1(pwm_core1_main);
 
     // start scpi server
     scpi_server_init(&mgr);

@@ -3,4 +3,4 @@ build
 tools/analyze_stack_usage.py
 scpi_server/scpi_commands_gen.h
 scpi_server/scpi_commands_gen.c
-
+scpi_server/scpi_enums_gen.h

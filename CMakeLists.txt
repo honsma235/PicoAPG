@@ -40,10 +40,11 @@ add_subdirectory(lib/libscpi)
 set(SCPI_YAML ${CMAKE_CURRENT_SOURCE_DIR}/scpi_server/scpi_commands.yaml)
 set(SCPI_GEN_H ${CMAKE_CURRENT_SOURCE_DIR}/scpi_server/scpi_commands_gen.h)
 set(SCPI_GEN_C ${CMAKE_CURRENT_SOURCE_DIR}/scpi_server/scpi_commands_gen.c)
+set(SCPI_ENUMS_GEN_H ${CMAKE_CURRENT_SOURCE_DIR}/scpi_server/scpi_enums_gen.h)
 
 
 add_custom_command(
-    OUTPUT ${SCPI_GEN_H} ${SCPI_GEN_C}
+    OUTPUT ${SCPI_GEN_H} ${SCPI_GEN_C} ${SCPI_ENUMS_GEN_H}
     COMMAND ${CMAKE_COMMAND} -E echo "Generating SCPI artifacts..."
     COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_scpi_artifacts.py ${SCPI_YAML}
     DEPENDS ${SCPI_YAML}
@@ -52,7 +53,7 @@ add_custom_command(
 )
 
 # Mark the generated files
-set_source_files_properties(${SCPI_GEN_C} ${SCPI_GEN_H} PROPERTIES GENERATED TRUE)
+set_source_files_properties(${SCPI_GEN_C} ${SCPI_GEN_H} ${SCPI_ENUMS_GEN_H} PROPERTIES GENERATED TRUE)
 
 # Add executable. Default name is the project name, version 0.1
 add_executable(${PROJECT_NAME}
@@ -63,6 +64,10 @@ add_executable(${PROJECT_NAME}
     scpi_server/scpi-def.c
     ${SCPI_GEN_C}
     scpi_server/scpi_commands.c
+    pwm/pwm_config.c
+    pwm/pwm_gpio.c
+    pwm/pwm_core1.c
+    pwm/pwm_irq.c
     ${PICO_TINYUSB_PATH}/lib/networking/rndis_reports.c
 )
 
@@ -77,7 +82,12 @@ pico_enable_stdio_usb(${PROJECT_NAME} 0)
 target_link_libraries(${PROJECT_NAME}
         pico_stdlib
         pico_unique_id
-        pico_bootsel_via_double_reset
+        pico_bootsel_via_double_reset   # broken in SDK 2.2.0 on Pico 2
+        pico_multicore
+        pico_time
+        hardware_pwm
+        hardware_gpio
+        hardware_irq
         tinyusb_device
         mongoose
         scpi
@@ -88,6 +98,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/usb_network
         ${CMAKE_CURRENT_LIST_DIR}/scpi_server
+        ${CMAKE_CURRENT_LIST_DIR}/pwm
         ${PICO_TINYUSB_PATH}/lib/networking
 )
 
@@ -96,5 +107,7 @@ pico_add_extra_outputs(${PROJECT_NAME})
 # Extra build flags
 add_definitions(-DDUAL_CONFIG=1) # Enable dual usb stack config ECM + RNDIS
 
+#pico_set_double_implementation(${PROJECT_NAME} none)
+
 target_link_options(${PROJECT_NAME} PUBLIC "-Wl,--print-memory-usage")
-target_compile_options(${PROJECT_NAME} PRIVATE -fstack-usage) # Adds stack usage files in build/CMakeFiles/PicoAPG.dir/… as .su files.
+target_compile_options(${PROJECT_NAME} PRIVATE -fstack-usage -Werror=double-promotion) # Adds stack usage files in build/CMakeFiles/PicoAPG.dir/… as .su files.

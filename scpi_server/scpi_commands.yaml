@@ -8,64 +8,169 @@
 # has_query: true auto-generates "?" query version
 # Commands with "?" in name are query-only
 # indices: list of indexed parameters with ranges
+#
+# Implementation Status:
+#   - No 'status' field: Command is implemented (stub not generated)
 
+# ============================================================================
+# Output Control Commands
+# ============================================================================
+
+- command: ":OUTPut:STATe"
+  has_query: true
+  description: "Enable/disable output drivers"
+  details: "ON: outputs enabled (idle state when not running); OFF: all outputs set to input/Hi-Z"
+  params:
+    - name: "state"
+      type: "bool"
+      default: false
+
+- command: ":ABORt"
+  has_query: false
+  description: "Abort generation"
+  details: "Stops PWM and returns to IDLE (armed). Outputs remain enabled if OUTPut:STATe is ON"
+  params: []
+
+# ============================================================================
+# PWM Configuration Commands
+# ============================================================================
 
 - command: ":SOURce:PWM:MODE"
   has_query: true
   description: "Set/Query PWM operating mode"
-  details: "OFF: disables PWM; ONEPH: single phase; TWOPH: two-phase; THREEPH: three-phase"
   params:
-    - name: "mode"
+    - name: "pwm_mode"
       type: "enum"
       values: ["OFF", "ONEPH", "TWOPH", "THREEPH"]
       default: "OFF"
-  status: "planned"
+  details: "OFF: disables PWM; ONEPH: single phase; TWOPH: two-phase; THREEPH: three-phase; Requires outputs OFF and PWM stopped."
 
 - command: ":SOURce:PWM:CONTrol"
   has_query: true
   description: "Set/Query control mode"
-  details: "DUTY: set DUTY cycle directly; MOD_ANGLE: set MODulation index & phase ANGLE; MOD_SPEED: set MODulation index & phase rotation SPEED; In ONEPH mode, only DUTY control is available."
   params:
-    - name: "control"
+    - name: "pwm_control"
       type: "enum"
       values: ["DUTY", "MOD_ANGLE", "MOD_SPEED"]
       default: "DUTY"
-  status: "planned"
+  details: "DUTY: set DUTY cycle directly; MOD_ANGLE: set MODulation index & phase ANGLE; MOD_SPEED: set MODulation index & phase rotation SPEED; In ONEPH mode, only DUTY control is available.; Requires PWM stopped."
 
 - command: ":SOURce:PWM:FREQuency"
   has_query: true
   description: "Set/Query PWM carrier frequency"
-  details: "Frequency in Hz"
   params:
     - name: "frequency"
       type: "float"
-      min: 1.0
-      max: 100000.0
-      default: 10000.0
-  status: "planned"
-
-- command: ":SOURce:PWM:ALIGNment"
-  has_query: true
-  description: "Set/Query PWM alignment"
-  details: "CENTER: center-aligned; EDGE: leading-edge aligned"
-  params:
-    - name: "alignment"
-      type: "enum"
-      values: ["CENTER", "EDGE"]
-      default: "CENTER"
-  status: "planned"
+      min: 10
+      max: 200000
+      default: 10000
+  details: "Frequency in Hz; Requires PWM stopped.; Must be >= 2x current :SOURce:PWM:SPEED."
 
 - command: ":SOURce:PWM:DEADtime"
   has_query: true
   description: "Set/Query PWM deadtime"
-  details: "Deadtime in nanoseconds between switching"
   params:
     - name: "deadtime"
-      type: "uint"
+      type: "float"
       min: 0
-      max: 10000
-      default: 1000
-  status: "planned"
+      max: 1
+      default: 1E-6
+  details: "Deadtime in seconds between switching.; Added half to high-side and half to low-side.; Requires PWM stopped."
+
+- command: ":SOURce:PWM:MINDuty"
+  has_query: true
+  description: "Set/Query minimum duty cycle"
+  params:
+    - name: "min"
+      type: "float"
+      min: 0.0
+      max: 0.4
+      default: 0.05
+  details: "Maximum is symmetrically limited to (1.0 - MIN).; Will be enforced in MOD_xx control modes too.; Requires PWM stopped."
+
+# ============================================================================
+# Phase Configuration Commands
+# ============================================================================
+
+- command: ":SOURce:PWM:PHase<n>:LS"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "1-3"
+  description: "Set/Query low-side GPIO assignment"
+  params:
+    - name: "gpio"
+      type: "int"
+      min: -1
+      max: 22
+      default: -1
+  details: "GPIO pin number; Use -1 for unused (will be set to input/Hi-Z).; Only 16 independent PWM channels are available on; GPIOs 0-15 which repeat on GPIOs 16-31, so you can; not use GPIO 0 and 16 (1 and 17, ...) at the same time.; Requires outputs OFF and PWM stopped."
+
+- command: ":SOURce:PWM:PHase<n>:HS"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "1-3"
+  description: "Set/Query high-side GPIO assignment"
+  params:
+    - name: "gpio"
+      type: "int"
+      min: -1
+      max: 22
+      default: -1
+  details: "GPIO pin number; Use -1 for unused (will be set to input/Hi-Z).; Only 16 independent PWM channels are available on; GPIOs 0-15 which repeat on GPIOs 16-31, so you can; not use GPIO 0 and 16 (1 and 17, ...) at the same time.; Requires outputs OFF and PWM stopped."
+
+- command: ":SOURce:PWM:PHase<n>:LS:INVert"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "1-3"
+  description: "Set/Query low-side GPIO inversion; Will also affect idle state"
+  params:
+    - name: "invert"
+      type: "bool"
+      default: false
+  details: "0 or OFF: normal; 1 or ON: inverted; Requires PWM stopped."
+
+- command: ":SOURce:PWM:PHase<n>:HS:INVert"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "1-3"
+  description: "Set/Query high-side GPIO inversion; Will also affect idle state"
+  params:
+    - name: "invert"
+      type: "bool"
+      default: false
+  details: "0 or OFF: normal; 1 or ON: inverted; Requires PWM stopped."
+
+- command: ":SOURce:PWM:PHase<n>:LS:IDLe"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "1-3"
+  description: "Set/Query low-side idle output state"
+  params:
+    - name: "state"
+      type: bool
+      default: false
+  details: "0 or OFF: output low when PWM not running; 1 or ON: output high when pwm not running; Requires PWM stopped."
+
+- command: ":SOURce:PWM:PHase<n>:HS:IDLe"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "1-3"
+  description: "Set/Query high-side idle output state"
+  params:
+    - name: "state"
+      type: bool
+      default: false
+  details: "0 or OFF: output low when PWM not running; 1 or ON: output high when pwm not running; Requires PWM stopped."
+
+# ============================================================================
+# Runtime / Modulation Commands
+# ============================================================================
 
 - command: ":SOURce:PWM:PHase<n>:DUTY"
   has_query: true
@@ -80,19 +185,6 @@
       min: 0.0
       max: 1.0
       default: 0.5
-  status: "planned"
-
-- command: ":SOURce:PWM:MINDuty"
-  has_query: true
-  description: "Set/Query minimum duty cycle"
-  details: "Maximum is symmetrically limited to (1.0 - MIN); Will always be enforced, even in MOD control modes"
-  params:
-    - name: "min"
-      type: "float"
-      min: 0.0
-      max: 0.2
-      default: 0.05
-  status: "planned"
 
 - command: ":SOURce:PWM:MOD"
   has_query: true
@@ -104,7 +196,6 @@
       min: 0.0
       max: 1.0
       default: 0
-  status: "planned"
 
 - command: ":SOURce:PWM:ANGLE"
   has_query: true
@@ -114,57 +205,81 @@
     - name: "angle"
       type: "float"
       default: 0
-  status: "planned"
 
 - command: ":SOURce:PWM:SPEED"
   has_query: true
   description: "Set/Query SPWM rotation speed"
-  details: "Rotation speed of SPWM phase in RPM"
   params:
     - name: "speed"
       type: "float"
-      min: 0
+      min: 1E-3
       max: 100000
-      default: 100
-  status: "planned"
+      default: 1
+  details: "Rotation speed of SPWM phase in Hz (one rotation per second); Must be <= :SOURce:PWM:FREQuency/2."
 
-- command: ":SOURce:PWM:PHase<n>:LS"
+# ============================================================================
+# Execution Mode Commands
+# ============================================================================
+
+- command: ":SOURce:BURSt:TYPE"
   has_query: true
-  indices:
-    - name: "n"
-      range: "1-3"
-  description: "Set/Query low-side GPIO assignment"
-  details: "GPIO pin number"
+  description: "Set/Query burst type"
   params:
-    - name: "gpio"
+    - name: "burst_mode"
+      type: "enum"
+      values: ["CONTinuous", "NCYCles", "DURation"]
+      default: "CONTinuous"
+  details: "CONTINUOUS: run until stopped; NCYCLES: run N cycles then auto-stop; TIMED: run for duration then auto-stop; Requires PWM stopped."
+
+- command: ":SOURce:BURSt:NCYCles"
+  has_query: true
+  description: "Set/Query number of PWM cycles to generate"
+  params:
+    - name: "ncycles"
       type: "uint"
-      min: 0
-      max: 29
-      default: 0
-  status: "planned"
+      min: 1
+      max: 4000000000
+      default: 1
+  details: "Number of complete PWM cycles to generate before auto-stopping (used with burst type NCYCles); Requires PWM stopped."
 
-- command: ":SOURce:PWM:PHase<n>:HS"
+- command: ":SOURce:BURSt:DURation"
   has_query: true
-  indices:
-    - name: "n"
-      range: "1-3"
-  description: "Set/Query high-side GPIO assignment"
-  details: "GPIO pin number"
+  description: "Set/Query PWM run duration"
   params:
-    - name: "gpio"
-      type: "uint"
-      min: 0
-      max: 29
-      default: 0
-  status: "planned"
+    - name: "duration"
+      type: "float"
+      min: 0.0001
+      max: 3600.0
+      default: 0.01
+  details: "Time in seconds to run PWM before auto-stopping (used with burst type DURation); Requires PWM stopped."
 
-- command: ":SOURce:PWM:CHANnel:INVert"
+# ============================================================================
+# Trigger Source and Control Commands
+# ============================================================================
+
+- command: ":TRIGger:SOURce"
   has_query: true
-  description: "Set/Query PWM channel output inversion"
-  details: "ON: inverts output polarity; OFF: normal"
+  description: "Set/Query trigger source"
   params:
-    - name: "invert"
-      type: "bool"
-      default: false
-  status: "planned"
+    - name: "trg_source"
+      type: "enum"
+      values: ["BUS"]
+      default: "BUS"
+  details: "BUS: trigger via *TRG; Requires PWM stopped."
 
+- command: ":TRIGger:DELay"
+  has_query: true
+  description: "Set/Query trigger delay"
+  params:
+    - name: "delay"
+      type: "float"
+      min: 0.0
+      max: 1000.0
+      default: 0.0
+  details: "Time in seconds to wait after trigger signal before PWM starts; Requires PWM stopped."
+
+- command: "*TRG"
+  has_query: false
+  description: "IEEE-488 bus trigger"
+  details: "Bus trigger signal; Requires :TRIGger:SOURce to be set to BUS."
+  params: []

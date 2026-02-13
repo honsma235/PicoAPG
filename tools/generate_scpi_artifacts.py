@@ -4,6 +4,8 @@
 #
 # See the repository LICENSE file for the full text.
 
+## todo: multiple parameters, array parameters
+
 """
 SCPI Artifact Generator: YAML -> Markdown reference + C handler code
 
@@ -29,6 +31,10 @@ try:
 except Exception:
     print("Please install PyYAML: pip install pyyaml", file=sys.stderr)
     raise
+
+# Global mapping: generated enum type name -> canonical (first) enum type name
+# Populated during gen_enums() to handle deduplication
+_ENUM_TYPE_MAPPING = {}
 
 
 def safe_ident(cmd):
@@ -65,11 +71,14 @@ def get_enum_type_name(ident, param_name):
 
 
 def get_param_type_c_for_param(ident, param):
-    """Get the proper C type for a parameter (uses enum typedef if type is enum)"""
+    """Get the proper C type for a parameter (uses enum typedef if type is enum).
+    Uses the deduplication mapping if available."""
     ptype = param.get("type", "")
     if ptype == "enum":
         param_name = param.get("name", "")
-        return get_enum_type_name(ident, param_name)
+        enum_name = get_enum_type_name(ident, param_name)
+        # If this enum was deduplicated to another name, use the canonical one
+        return _ENUM_TYPE_MAPPING.get(enum_name, enum_name)
     return get_param_type_c(ptype)
 
 
@@ -114,6 +123,8 @@ def generate_param_parsing_code(ident, params):
             
         elif ptype == "enum":
             enum_name = get_enum_type_name(ident, param_name)
+            # Use mapped canonical enum type if available
+            canonical_enum = _ENUM_TYPE_MAPPING.get(enum_name, enum_name)
             choice_var = f"source_{safe_ident(param_name)}_choices"
             lines.append(f"    /* Parse {param_name} (enum) */")
             lines.append(f"    {{")
@@ -121,7 +132,7 @@ def generate_param_parsing_code(ident, params):
             lines.append(f"        if (!SCPI_ParamChoice(context, {choice_var}, &{param_name}_value, TRUE)) {{")
             lines.append(f"            return SCPI_RES_ERR;")
             lines.append(f"        }}")
-            lines.append(f"        {param_name} = ({enum_name}){param_name}_value;")
+            lines.append(f"        {param_name} = ({canonical_enum}){param_name}_value;")
             lines.append(f"    }}")
         
         else:
@@ -221,7 +232,6 @@ def generate_enum_choices_code(cmd_entry):
         if param.get("type") == "enum":
             param_name = param.get("name", "")
             values = param.get("values", [])
-            enum_name = get_enum_type_name(ident, param_name)
             choice_var = f"source_{safe_ident(param_name)}_choices"
             
             lines.append(f"static const scpi_choice_def_t {choice_var}[] = {{")
@@ -374,48 +384,15 @@ def gen_header(docs, header_path, c_path):
     
     lines.append("/* Auto-generated SCPI handler stubs and command table")
     lines.append(" * Generated from: scpi_commands.yaml")
-    lines.append(" * DO NOT EDIT - regenerate with: python tools/generate_scpi_docs.py --gen-header")
+    lines.append(" * DO NOT EDIT - regenerate with: python tools/generate_scpi_artifacts.py scpi_server/scpi_commands.yaml --force")
     lines.append(" */")
     lines.append("#ifndef %s" % guard)
     lines.append("#define %s\n" % guard)
     lines.append("#include <stdint.h>")
     lines.append("#include <stdbool.h>")
     lines.append("#include <string.h>")
-    lines.append("#include \"scpi/scpi.h\"\n")
-    
-    # Generate enums for enum parameters (no structs - pass enum types directly)
-    processed_enums = set()  # Avoid duplicate enum definitions
-    
-    for cmd_entry in docs:
-        cmd = cmd_entry.get("command", "")
-        params = cmd_entry.get("params", [])
-        
-        # Skip parameterless commands and query-only commands
-        if not params or is_query(cmd):
-            continue
-        
-        ident = safe_ident(cmd)
-        
-        # Generate enums for enum parameters
-        for param in params:
-            if param.get("type") == "enum":
-                param_name = param.get("name", "")
-                enum_name = get_enum_type_name(ident, param_name)
-                
-                # Skip if already defined
-                if enum_name in processed_enums:
-                    continue
-                processed_enums.add(enum_name)
-                values = param.get("values", [])
-                lines.append(f"typedef enum {{")
-                for enum_index, val in enumerate(values):
-                    # Convert value to valid C enum name (replace invalid chars with _)
-                    enum_val = re.sub(r"[^0-9a-zA-Z]", "_", val).upper()
-                    # Prefix with param name - if starts with digit, underscore goes between
-                    enum_val_prefixed = f"{param_name.upper()}_{enum_val}"
-                    lines.append(f"    {enum_val_prefixed} = {enum_index},")
-                lines.append(f"}} {enum_name};")
-                lines.append("")
+    lines.append("#include \"scpi/scpi.h\"")
+    lines.append("#include \"scpi_enums_gen.h\"\n")
     
     # Function prototypes
     lines.extend(generate_function_prototypes(docs))
@@ -480,7 +457,7 @@ def gen_c_handlers(docs, c_path):
     
     lines.append("/* Auto-generated SCPI handlers")
     lines.append(" * Generated from: scpi_commands.yaml")
-    lines.append(" * DO NOT EDIT - regenerate with: python tools/generate_scpi_docs.py --gen-header")
+    lines.append(" * DO NOT EDIT - regenerate with: python tools/generate_scpi_artifacts.py scpi_server/scpi_commands.yaml --force")
     lines.append(" */")
     lines.append("#include \"scpi_commands_gen.h\"")
     lines.append("#include \"scpi-def.h\"")
@@ -491,6 +468,7 @@ def gen_c_handlers(docs, c_path):
     lines.append("/* ============================================================================")
     lines.append(" * Generated helper functions")
     lines.append(" * ========================================================================== */\n")
+
     lines.append("static inline scpi_result_t scpi_gen_parse_indices(scpi_t *context, unsigned int *indices, const unsigned int *min_vals, const unsigned int *max_vals, size_t count) {")
     lines.append("    if (!SCPI_CommandNumbers(context, (int32_t*)indices, count, -1)) {")
     lines.append("        SCPI_ErrorPush(context, SCPI_ERROR_INVALID_SUFFIX);")
@@ -559,22 +537,57 @@ def gen_c_handlers(docs, c_path):
     lines.append("")
 
 
+
     
     # Generate choice lists for enum parameters (one per command with enum)
     lines.append("/* ============================================================================")
     lines.append(" * Choice lists for enum parameters")
     lines.append(" * ========================================================================== */\n")
     
+    generated_choices = set()  # Track which choice list names we've generated
     for cmd_entry in docs:
-        lines.extend(generate_enum_choices_code(cmd_entry))
+        cmd = cmd_entry.get("command", "")
+        if is_query(cmd):
+            continue
+        params = cmd_entry.get("params", [])
+        for param in params:
+            if param.get("type") == "enum":
+                param_name = param.get("name", "")
+                choice_var = f"source_{safe_ident(param_name)}_choices"
+                # Only generate this choice list once
+                if choice_var not in generated_choices:
+                    values = param.get("values", [])
+                    lines.append(f"static const scpi_choice_def_t {choice_var}[] = {{")
+                    for enum_index, val in enumerate(values):
+                        enum_const = re.sub(r"[^0-9a-zA-Z]", "_", val).upper()
+                        enum_const_full = f"{param_name.upper()}_{enum_const}"
+                        lines.append(f"    {{\"{val}\", {enum_const_full}}},")
+                    lines.append(f"    SCPI_CHOICE_LIST_END")
+                    lines.append(f"}};")
+                    lines.append("")
+                    generated_choices.add(choice_var)
     
-    # Weak stubs for all custom callbacks
+    # Stub implementations for planned (unimplemented) commands
+    # - status: "planned" => Generate non-weak stub (linker error if not overridden)
+    # - No status field => No stub (implementation must exist in scpi_commands.c)
     lines.append("/* ============================================================================")
-    lines.append(" * Weak stub implementations (override in scpi_commands.c)")
+    lines.append(" * Stub implementations for planned (unimplemented) commands")
+    lines.append(" * Only stubs for commands with status: \"planned\" are generated.")
+    lines.append(" * Commands without status are assumed to be implemented in scpi_commands.c")
     lines.append(" * ========================================================================== */\n")
     
     for cmd_entry in docs:
         cmd = cmd_entry.get("command", "")
+        status = cmd_entry.get("status")
+        
+        # Skip if no status field (command is implemented)
+        if status is None:
+            continue
+        
+        # Only generate stubs for planned commands
+        if status != "planned":
+            continue
+        
         params = cmd_entry.get("params", [])
         indices = cmd_entry.get("indices", [])
         has_query = cmd_entry.get("has_query", False)
@@ -592,7 +605,7 @@ def gen_c_handlers(docs, c_path):
                 pname = param.get("name", "")
                 parts.append(f"{ctype} *{pname}")
             
-            lines.append(f"__attribute__((weak))")
+            # Non-weak stub for planned (unimplemented) command
             lines.append(f"int custom_{ident}({', '.join(parts)}) {{")
             if indices:
                 lines.append(f"    (void)indices;")
@@ -618,7 +631,7 @@ def gen_c_handlers(docs, c_path):
             if not parts:
                 parts.append("void")
             
-            lines.append(f"__attribute__((weak))")
+            # Non-weak stub for planned (unimplemented) command
             lines.append(f"int custom_{ident}({', '.join(parts)}) {{")
             if has_indices:
                 lines.append(f"    (void)indices;")
@@ -639,7 +652,7 @@ def gen_c_handlers(docs, c_path):
                     pname = param.get("name", "")
                     parts.append(f"{ctype} *{pname}")
                 
-                lines.append(f"__attribute__((weak))")
+                # Non-weak stub for planned (unimplemented) command
                 lines.append(f"int custom_{ident}_QUERY({', '.join(parts)}) {{")
                 if has_indices:
                     lines.append(f"    (void)indices;")
@@ -778,7 +791,136 @@ def should_regenerate(input_path, output_paths, force=False):
     
     return False
 
+
+
+def build_enum_type_mapping(docs):
+    """Build the enum type mapping for deduplication.
+    This should be called first, before generating any code."""
+    global _ENUM_TYPE_MAPPING
+    _ENUM_TYPE_MAPPING.clear()
+    
+    enum_value_map = {}  # tuple(values) -> first_enum_type_name
+    
+    for cmd_entry in docs:
+        cmd = cmd_entry.get("command", "")
+        params = cmd_entry.get("params", [])
+        
+        if not params or is_query(cmd):
+            continue
+        
+        ident = safe_ident(cmd)
+        
+        for param in params:
+            if param.get("type") == "enum":
+                param_name = param.get("name", "")
+                enum_name = get_enum_type_name(ident, param_name)
+                values = param.get("values", [])
+                value_tuple = tuple(values)
+                
+                # If this value combination already exists, reuse the first enum type name
+                if value_tuple in enum_value_map:
+                    first_enum_name = enum_value_map[value_tuple]
+                    _ENUM_TYPE_MAPPING[enum_name] = first_enum_name
+                else:
+                    # First occurrence of this value combination
+                    enum_value_map[value_tuple] = enum_name
+
+
+def gen_enums(docs, enums_path):
+    """Generate standalone scpi_enums.h with all enum definitions.
+    
+    This header is independent of scpi_commands_gen.h and can be safely included
+    by PWM subsystem and other modules without pulling in full SCPI machinery.
+    
+    Uses pre-built _ENUM_TYPE_MAPPING (call build_enum_type_mapping first).
+    """
+    lines = []
+    
+    lines.append("/*")
+    lines.append(" * Copyright (c) 2026 honsma235")
+    lines.append(" * SPDX-License-Identifier: GPL-2.0-only")
+    lines.append(" *")
+    lines.append(" * SCPI Enumerations (Auto-Generated)")
+    lines.append(" *")
+    lines.append(" * This header contains all generated enums from scpi_commands.yaml.")
+    lines.append(" * It is independent of scpi_commands_gen.h and can be safely included")
+    lines.append(" * by PWM subsystem and other modules without pulling in full SCPI machinery.")
+    lines.append(" *")
+    lines.append(" * Auto-generated. Do not edit directly - regenerate via:")
+    lines.append(" *   python tools/generate_scpi_artifacts.py scpi_server/scpi_commands.yaml --force")
+    lines.append(" */")
+    lines.append("")
+    lines.append("#ifndef SCPI_ENUMS_GEN_H")
+    lines.append("#define SCPI_ENUMS_GEN_H")
+    lines.append("")
+    lines.append("#ifdef __cplusplus")
+    lines.append("extern \"C\" {")
+    lines.append("#endif")
+    lines.append("")
+    
+    # Track enum values to avoid duplicate typedefs
+    # Maps tuple of enum values -> (first_enum_type_name, enum_definition_lines)
+    enum_value_map = {}  # tuple(values) -> (enum_type_name, lines)
+    processed_enums = {}  # Maps enum type name to enum definition lines
+    
+    # Collect all enums (using pre-built deduplication mapping)
+    for cmd_entry in docs:
+        cmd = cmd_entry.get("command", "")
+        params = cmd_entry.get("params", [])
+        
+        if not params or is_query(cmd):
+            continue
+        
+        ident = safe_ident(cmd)
+        
+        for param in params:
+            if param.get("type") == "enum":
+                param_name = param.get("name", "")
+                enum_name = get_enum_type_name(ident, param_name)
+                values = param.get("values", [])
+                value_tuple = tuple(values)
+                
+                # If already processed (or mapped), skip
+                if enum_name in processed_enums:
+                    continue
+                if enum_name in _ENUM_TYPE_MAPPING:
+                    # This enum was deduplicated - it will be generated under its canonical name
+                    continue
+                
+                # If this value combination already exists, it was tracked during mapping
+                if value_tuple in enum_value_map:
+                    continue
+                
+                # First occurrence of this value combination - generate the typedef
+                enum_lines = []
+                enum_lines.append(f"/* {param_name}: {', '.join(values)} */")
+                enum_lines.append(f"typedef enum {{")
+                for enum_index, val in enumerate(values):
+                    enum_val = re.sub(r"[^0-9a-zA-Z]", "_", val).upper()
+                    enum_val_prefixed = f"{param_name.upper()}_{enum_val}"
+                    enum_lines.append(f"    {enum_val_prefixed} = {enum_index},")
+                enum_lines.append(f"}} {enum_name};")
+                enum_lines.append("")
+                
+                enum_value_map[value_tuple] = (enum_name, enum_lines)
+                processed_enums[enum_name] = enum_lines
+    
+    # Write all enums in order
+    for enum_lines in processed_enums.values():
+        lines.extend(enum_lines)
+    
+    lines.append("#ifdef __cplusplus")
+    lines.append("}")
+    lines.append("#endif")
+    lines.append("")
+    lines.append("#endif /* SCPI_ENUMS_GEN_H */")
+    
+    with open(enums_path, "w", newline="\n") as f:
+        f.write("\n".join(lines))
+
+
 def main():
+
     ap = argparse.ArgumentParser(description="Generate SCPI documentation and C code artifacts from YAML")
     ap.add_argument("yaml", help="Path to scpi_commands.yaml")
     ap.add_argument("--force", action="store_true", help="Regenerate even if outputs are newer than input")
@@ -791,6 +933,10 @@ def main():
     md_path = os.path.join(yaml_dir, "SCPI_COMMANDS.md")
     header_path = os.path.join(yaml_dir, "scpi_commands_gen.h")
     c_path = os.path.join(yaml_dir, "scpi_commands_gen.c")
+    enums_path = os.path.join(yaml_dir, "scpi_enums_gen.h")
+
+    # Build enum mapping FIRST before any code generation
+    build_enum_type_mapping(docs)
 
     generated = []
 
@@ -800,11 +946,16 @@ def main():
             gen_md(docs, f)
         generated.append(md_path)
     
-    # Generate header and C files
+    # Generate header and C files (uses the pre-built mapping)
     if should_regenerate(args.yaml, [header_path, c_path], args.force):
         gen_header(docs, header_path, c_path)
         generated.append(header_path)
         generated.append(c_path)
+
+    # Generate enums header (also uses the pre-built mapping)
+    if should_regenerate(args.yaml, [enums_path], args.force):
+        gen_enums(docs, enums_path)
+        generated.append(enums_path)
 
     # Report generated files
     if generated:
