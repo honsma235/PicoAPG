@@ -8,18 +8,11 @@
 #ifndef PWM_IRQ_H
 #define PWM_IRQ_H
 
-#include "pwm_config.h"
+#include "pwm.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/**
- * Setup PWM wrap IRQ handler for a given slice.
- *
- * Pass -1 to deinitialize the currently configured slice.
- */
-void pwm_irq_setup(int slice);
 
 /**
  * Prime PWM compare levels once without relying on an IRQ trigger.
@@ -28,8 +21,13 @@ void pwm_irq_setup(int slice);
  */
 void pwm_irq_prime(void);
 
+
+void pwm_irq_init(void);
+
 #ifdef __cplusplus
 }
 #endif
 
 #endif /* PWM_IRQ_H */
+
+

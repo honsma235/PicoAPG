@@ -25,6 +25,9 @@ endif()
 # ====================================================================================
 set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
+# Disable SDK default alarm pool; we create our own in trigger.
+add_compile_definitions(PICO_TIME_DEFAULT_ALARM_POOL_DISABLED=1)
+
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
@@ -64,9 +67,11 @@ add_executable(${PROJECT_NAME}
     scpi_server/scpi-def.c
     ${SCPI_GEN_C}
     scpi_server/scpi_commands.c
-    pwm/pwm_config.c
+    common/main_core1.c
+    common/output.c
+    common/trigger.c
+    pwm/pwm.c
     pwm/pwm_gpio.c
-    pwm/pwm_core1.c
     pwm/pwm_irq.c
     ${PICO_TINYUSB_PATH}/lib/networking/rndis_reports.c
 )
@@ -97,8 +102,6 @@ target_link_libraries(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
         ${CMAKE_CURRENT_LIST_DIR}/usb_network
-        ${CMAKE_CURRENT_LIST_DIR}/scpi_server
-        ${CMAKE_CURRENT_LIST_DIR}/pwm
         ${PICO_TINYUSB_PATH}/lib/networking
 )
 
@@ -110,4 +113,4 @@ add_definitions(-DDUAL_CONFIG=1) # Enable dual usb stack config ECM + RNDIS
 #pico_set_double_implementation(${PROJECT_NAME} none)
 
 target_link_options(${PROJECT_NAME} PUBLIC "-Wl,--print-memory-usage")
-target_compile_options(${PROJECT_NAME} PRIVATE -fstack-usage -Werror=double-promotion) # Adds stack usage files in build/CMakeFiles/PicoAPG.dir/… as .su files.
+target_compile_options(${PROJECT_NAME} PRIVATE -fstack-usage -Wextra -Werror=double-promotion) # Adds stack usage files in build/CMakeFiles/PicoAPG.dir/… as .su files.

@@ -28,8 +28,98 @@
 - command: ":ABORt"
   has_query: false
   description: "Abort generation"
-  details: "Stops PWM and returns to IDLE (armed). Outputs remain enabled if OUTPut:STATe is ON"
+  details: "Stops ongoing operation and returns to IDLE (armed). Outputs remain enabled if OUTPut:STATe is ON"
   params: []
+
+
+# ============================================================================
+# Trigger Source and Control Commands
+# ============================================================================
+
+- command: ":TRIGger:SOURce"
+  has_query: true
+  description: "Set/Query trigger source"
+  params:
+    - name: "trg_source"
+      type: "enum"
+      values: ["IMM", "INT", "BUS"]
+      default: "BUS"
+  details: "IMM: immediate trigger (always armed); INT: internal periodic trigger; BUS: trigger via *TRG"
+
+- command: ":TRIGger:DELay"
+  has_query: true
+  description: "Set/Query trigger delay"
+  params:
+    - name: "delay"
+      type: "float"
+      min: 0.0
+      max: 1000.0
+      default: 0.0
+  details: "Idle time in seconds after trigger event before operation starts"
+
+- command: "*TRG"
+  has_query: false
+  description: "IEEE-488 bus trigger"
+  details: "Bus trigger signal; Requires :TRIGger:SOURce to be set to BUS."
+  params: []
+
+# ============================================================================
+# Execution Mode Commands
+# ============================================================================
+
+- command: ":SOURce:BURSt:TYPE"
+  has_query: true
+  description: "Set/Query burst type"
+  params:
+    - name: "burst_mode"
+      type: "enum"
+      values: ["CONTinuous", "NCYCles", "DURation"]
+      default: "CONTinuous"
+  details: "CONTINUOUS: no burst, run continuously; NCYCLES: run N cycles then auto-stop; TIMED: run for duration then auto-stop; Will abort ongoing operation when changed"
+
+- command: ":SOURce:BURSt:NCYCles"
+  has_query: true
+  description: "Set/Query number of burst cycles to generate"
+  params:
+    - name: "ncycles"
+      type: "uint"
+      min: 1
+      max: 4000000000
+      default: 1
+  details: "Number of complete burst cycles to generate before auto-stopping (used with burst type NCYCles)"
+
+- command: ":SOURce:BURSt:DURation"
+  has_query: true
+  description: "Set/Query burst run duration"
+  params:
+    - name: "duration"
+      type: "float"
+      min: 0.0001
+      max: 3600.0
+      default: 0.01
+  details: "Time in seconds to run burst before auto-stopping (used with burst type DURation)"
+
+- command: ":SOURce:BURSt:INTerval"
+  has_query: true
+  description: "Set/Query internal trigger interval"
+  params:
+    - name: "interval"
+      type: "float"
+      min: 1e-4
+      max: 60.0
+      default: 1
+  details: "Cycle time for internal trigger source.; Applies when :TRIGger:SOURce INT"
+
+- command: ":SOURce:BURSt:FREQuency"
+  has_query: true
+  description: "Set/Query internal trigger frequency"
+  params:
+    - name: "frequency"
+      type: "float"
+      min: 0.01667
+      max: 1000000.0
+      default: 1
+  details: "Frequency of internal trigger source.; Reciprocal of INTerval.; Applies when :TRIGger:SOURce INT"
 
 # ============================================================================
 # PWM Configuration Commands
@@ -43,7 +133,7 @@
       type: "enum"
       values: ["OFF", "ONEPH", "TWOPH", "THREEPH"]
       default: "OFF"
-  details: "OFF: disables PWM; ONEPH: single phase; TWOPH: two-phase; THREEPH: three-phase; Requires outputs OFF and PWM stopped."
+  details: "OFF: disables PWM; ONEPH: single phase, only DUTY control available; TWOPH: two-phase; THREEPH: three-phase; Requires outputs OFF to change mode."
 
 - command: ":SOURce:PWM:CONTrol"
   has_query: true
@@ -53,7 +143,7 @@
       type: "enum"
       values: ["DUTY", "MOD_ANGLE", "MOD_SPEED"]
       default: "DUTY"
-  details: "DUTY: set DUTY cycle directly; MOD_ANGLE: set MODulation index & phase ANGLE; MOD_SPEED: set MODulation index & phase rotation SPEED; In ONEPH mode, only DUTY control is available.; Requires PWM stopped."
+  details: "DUTY: set DUTY cycle directly; MOD_ANGLE: set MODulation index & phase ANGLE; MOD_SPEED: set MODulation index & phase rotation SPEED; In ONEPH mode, only DUTY control is available.; Requires PWM stopped to change."
 
 - command: ":SOURce:PWM:FREQuency"
   has_query: true
@@ -64,7 +154,7 @@
       min: 10
       max: 200000
       default: 10000
-  details: "Frequency in Hz; Requires PWM stopped.; Must be >= 2x current :SOURce:PWM:SPEED."
+  details: "Frequency in Hz; Must be >= 2x current :SOURce:PWM:SPEED.; Requires PWM stopped to change."
 
 - command: ":SOURce:PWM:DEADtime"
   has_query: true
@@ -75,7 +165,7 @@
       min: 0
       max: 1
       default: 1E-6
-  details: "Deadtime in seconds between switching.; Added half to high-side and half to low-side.; Requires PWM stopped."
+  details: "Deadtime in seconds between high-side and low-side switching.; Added half to high-side and half to low-side pulse.; Requires PWM stopped to change."
 
 - command: ":SOURce:PWM:MINDuty"
   has_query: true
@@ -86,11 +176,7 @@
       min: 0.0
       max: 0.4
       default: 0.05
-  details: "Maximum is symmetrically limited to (1.0 - MIN).; Will be enforced in MOD_xx control modes too.; Requires PWM stopped."
-
-# ============================================================================
-# Phase Configuration Commands
-# ============================================================================
+  details: "Maximum is symmetrically limited to (1.0 - MIN).; Will be enforced in MOD_xx control modes too.; Requires PWM stopped to change."
 
 - command: ":SOURce:PWM:PHase<n>:LS"
   has_query: true
@@ -104,7 +190,7 @@
       min: -1
       max: 22
       default: -1
-  details: "GPIO pin number; Use -1 for unused (will be set to input/Hi-Z).; Only 16 independent PWM channels are available on; GPIOs 0-15 which repeat on GPIOs 16-31, so you can; not use GPIO 0 and 16 (1 and 17, ...) at the same time.; Requires outputs OFF and PWM stopped."
+  details: "GPIO pin number; Use -1 for unused (will be set to input/Hi-Z).; The 16 available PWM channels are mapped to GPIO 0–15 and mirrored on GPIO 16–31. Consequently, GPIO n and GPIO n+16 are linked to the same channel and cannot be controlled independently.; Requires outputs OFF to change."
 
 - command: ":SOURce:PWM:PHase<n>:HS"
   has_query: true
@@ -118,7 +204,7 @@
       min: -1
       max: 22
       default: -1
-  details: "GPIO pin number; Use -1 for unused (will be set to input/Hi-Z).; Only 16 independent PWM channels are available on; GPIOs 0-15 which repeat on GPIOs 16-31, so you can; not use GPIO 0 and 16 (1 and 17, ...) at the same time.; Requires outputs OFF and PWM stopped."
+  details: "GPIO pin number; Use -1 for unused (will be set to input/Hi-Z).; The 16 available PWM channels are mapped to GPIO 0–15 and mirrored on GPIO 16–31. Consequently, GPIO n and GPIO n+16 are linked to the same channel and cannot be controlled independently.; Requires outputs OFF to change."
 
 - command: ":SOURce:PWM:PHase<n>:LS:INVert"
   has_query: true
@@ -130,7 +216,7 @@
     - name: "invert"
       type: "bool"
       default: false
-  details: "0 or OFF: normal; 1 or ON: inverted; Requires PWM stopped."
+  details: "0 or OFF: normal; 1 or ON: inverted; Requires PWM stopped to change."
 
 - command: ":SOURce:PWM:PHase<n>:HS:INVert"
   has_query: true
@@ -142,7 +228,7 @@
     - name: "invert"
       type: "bool"
       default: false
-  details: "0 or OFF: normal; 1 or ON: inverted; Requires PWM stopped."
+  details: "0 or OFF: normal; 1 or ON: inverted; Requires PWM stopped to change."
 
 - command: ":SOURce:PWM:PHase<n>:LS:IDLe"
   has_query: true
@@ -154,7 +240,7 @@
     - name: "state"
       type: bool
       default: false
-  details: "0 or OFF: output low when PWM not running; 1 or ON: output high when pwm not running; Requires PWM stopped."
+  details: "0 or OFF: output low when PWM not running; 1 or ON: output high when pwm not running; Requires PWM stopped to change."
 
 - command: ":SOURce:PWM:PHase<n>:HS:IDLe"
   has_query: true
@@ -166,10 +252,10 @@
     - name: "state"
       type: bool
       default: false
-  details: "0 or OFF: output low when PWM not running; 1 or ON: output high when pwm not running; Requires PWM stopped."
+  details: "0 or OFF: output low when PWM not running; 1 or ON: output high when pwm not running; Requires PWM stopped to change."
 
 # ============================================================================
-# Runtime / Modulation Commands
+# PWM Runtime / Modulation Commands
 # ============================================================================
 
 - command: ":SOURce:PWM:PHase<n>:DUTY"
@@ -217,69 +303,3 @@
       default: 1
   details: "Rotation speed of SPWM phase in Hz (one rotation per second); Must be <= :SOURce:PWM:FREQuency/2."
 
-# ============================================================================
-# Execution Mode Commands
-# ============================================================================
-
-- command: ":SOURce:BURSt:TYPE"
-  has_query: true
-  description: "Set/Query burst type"
-  params:
-    - name: "burst_mode"
-      type: "enum"
-      values: ["CONTinuous", "NCYCles", "DURation"]
-      default: "CONTinuous"
-  details: "CONTINUOUS: run until stopped; NCYCLES: run N cycles then auto-stop; TIMED: run for duration then auto-stop; Requires PWM stopped."
-
-- command: ":SOURce:BURSt:NCYCles"
-  has_query: true
-  description: "Set/Query number of PWM cycles to generate"
-  params:
-    - name: "ncycles"
-      type: "uint"
-      min: 1
-      max: 4000000000
-      default: 1
-  details: "Number of complete PWM cycles to generate before auto-stopping (used with burst type NCYCles); Requires PWM stopped."
-
-- command: ":SOURce:BURSt:DURation"
-  has_query: true
-  description: "Set/Query PWM run duration"
-  params:
-    - name: "duration"
-      type: "float"
-      min: 0.0001
-      max: 3600.0
-      default: 0.01
-  details: "Time in seconds to run PWM before auto-stopping (used with burst type DURation); Requires PWM stopped."
-
-# ============================================================================
-# Trigger Source and Control Commands
-# ============================================================================
-
-- command: ":TRIGger:SOURce"
-  has_query: true
-  description: "Set/Query trigger source"
-  params:
-    - name: "trg_source"
-      type: "enum"
-      values: ["BUS"]
-      default: "BUS"
-  details: "BUS: trigger via *TRG; Requires PWM stopped."
-
-- command: ":TRIGger:DELay"
-  has_query: true
-  description: "Set/Query trigger delay"
-  params:
-    - name: "delay"
-      type: "float"
-      min: 0.0
-      max: 1000.0
-      default: 0.0
-  details: "Time in seconds to wait after trigger signal before PWM starts; Requires PWM stopped."
-
-- command: "*TRG"
-  has_query: false
-  description: "IEEE-488 bus trigger"
-  details: "Bus trigger signal; Requires :TRIGger:SOURce to be set to BUS."
-  params: []

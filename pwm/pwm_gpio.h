@@ -13,8 +13,9 @@
 #ifndef PWM_GPIO_H
 #define PWM_GPIO_H
 
-#include <stdint.h>
-#include "pwm_config.h"
+#include <stdbool.h>
+
+#include "pwm.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,10 +30,13 @@ extern "C" {
  * */
 void pwm_init_hardware(void);
 
-/**
- * Apply GPIO state based on PWM and output configuration.
- */
-void pwm_gpio_apply_output_state(void);
+void pwm_set_idle_state(void);
+
+/* Attach PWM GPIOs to PWM function (enable output drive). */
+void pwm_outputs_attach(void);
+
+/* Detach PWM GPIOs to Hi-Z (disable output drive). */
+void pwm_outputs_detach(void);
 
 /**
  * Check if a given GPIO pin is currently assigned to any PWM phase/channel

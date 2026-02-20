@@ -9,11 +9,12 @@
 #include <string.h>
 
 #include "mongoose.h"
-#include "pwm/pwm_config.h"
-#include "pwm/pwm_gpio.h"
 #include "scpi-def.h"
 #include "scpi/scpi.h"
 #include "scpi_server.h"
+#include "common/main_core1.h"
+
+
 
 /*
  * This server uses the global `scpi_context`, `scpi_input_buffer` and
@@ -238,8 +239,7 @@ scpi_result_t SCPI_Control(scpi_t *context, scpi_ctrl_name_t ctrl, scpi_reg_val_
 
 scpi_result_t SCPI_Reset(scpi_t *context) {
     (void)context;
-    pwm_config_reset_to_defaults();
-    pwm_gpio_apply_output_state();
+    reset_to_defaults_all();
     return SCPI_RES_OK;
 }
 
