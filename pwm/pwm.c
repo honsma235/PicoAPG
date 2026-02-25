@@ -1,6 +1,10 @@
 /*
- * Unified PWM configuration and control
+ * Copyright (c) 2026 honsma235
+ * SPDX-License-Identifier: GPL-2.0-only
+ *
+ * See the repository LICENSE file for the full text.
  */
+
 
 #include <math.h>
 #include <string.h>

@@ -1,15 +1,18 @@
 /*
  * Copyright (c) 2026 honsma235
  * SPDX-License-Identifier: GPL-2.0-only
+ *
+ * See the repository LICENSE file for the full text.
  */
+
 
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/pwm.h"
 #include "hardware/sync.h"
 
+#include "common/output.h"
 #include "pwm_gpio.h"
-
 
 void __no_inline_not_in_flash_func(pwm_set_idle_state)(void) {
     for (uint8_t phase = 0; phase < g_pwm_config.op_mode; phase++) {
@@ -41,45 +44,28 @@ void __no_inline_not_in_flash_func(pwm_set_idle_state)(void) {
  * Force all GPIO outputs to high-impedance
  * Sets all configured GPIO pins to Hi-Z state (disabled output, disabled input)
  */
-void pwm_outputs_detach(void) {
-    /* Loop over all configured user GPIO pins */
-    for (uint8_t phase = 0; phase < 3; phase++) {
-        int gpio_ls = g_pwm_config.phase[phase].gpio_ls;
-        int gpio_hs = g_pwm_config.phase[phase].gpio_hs;
-
-        if (gpio_ls != -1) {
-            // Set input enable off, output disable on
-            hw_write_masked(&pads_bank0_hw->io[gpio_ls], PADS_BANK0_GPIO0_OD_BITS,
-                            PADS_BANK0_GPIO0_IE_BITS | PADS_BANK0_GPIO0_OD_BITS);
-        }
-
-        if (gpio_hs != -1) {
-            // Set input enable off, output disable on
-            hw_write_masked(&pads_bank0_hw->io[gpio_hs], PADS_BANK0_GPIO0_OD_BITS,
-                            PADS_BANK0_GPIO0_IE_BITS | PADS_BANK0_GPIO0_OD_BITS);
-        }
-    }
-}
-
-void pwm_outputs_attach(void) {
-    if (g_pwm_config.op_mode == PWM_MODE_OFF) {
-        return;
-    }
+void pwm_outputs_update(void) {
+    bool enabled = (g_pwm_config.op_mode != PWM_MODE_OFF) && g_output_state.enabled;
 
     /* Loop over all configured user GPIO pins */
     for (uint8_t phase = 0; phase < 3; phase++) {
         int gpio_ls = g_pwm_config.phase[phase].gpio_ls;
         int gpio_hs = g_pwm_config.phase[phase].gpio_hs;
-
-        if (gpio_ls != -1) {
-            gpio_set_function(gpio_ls, GPIO_FUNC_PWM);
-        }
-
-        if (gpio_hs != -1) {
-            gpio_set_function(gpio_hs, GPIO_FUNC_PWM);
-        }
+        if (gpio_ls != -1)
+            if (enabled) {
+                gpio_set_function(gpio_ls, GPIO_FUNC_PWM);
+            } else {
+                output_detach(gpio_ls);
+            }
+        if (gpio_hs != -1)
+            if (enabled) {
+                gpio_set_function(gpio_hs, GPIO_FUNC_PWM);
+            } else {
+                output_detach(gpio_hs);
+            }
     }
 }
+
 
 bool pwm_gpio_in_use(int gpio) {
     if (gpio < 0)

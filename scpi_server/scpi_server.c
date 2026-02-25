@@ -14,8 +14,6 @@
 #include "scpi_server.h"
 #include "common/main_core1.h"
 
-
-
 /*
  * This server uses the global `scpi_context`, `scpi_input_buffer` and
  * `scpi_error_queue_data` defined in `scpi-def.c`. We support a single

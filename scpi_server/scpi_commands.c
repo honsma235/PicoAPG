@@ -39,15 +39,16 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-#include "scpi_commands_gen.h"
+#include "apg/apg.h"
 #include "common/main_core1.h"
 #include "common/output.h"
 #include "common/trigger.h"
 #include "pwm/pwm.h"
 #include "pwm/pwm_gpio.h"
-
+#include "scpi_commands_gen.h"
 
 /* Helper macros for common checks */
 #define REQUIRE_OUTPUTS_DISABLED()               \
@@ -57,11 +58,11 @@
         }                                        \
     } while (0)
 
-#define PWM_REQUIRE_NOT_RUNNING()                \
-    do {                                         \
-        if (g_pwm_config.state == PWM_STATE_RUNNING) {              \
-            return SCPI_ERROR_SETTINGS_CONFLICT; \
-        }                                        \
+#define PWM_REQUIRE_NOT_RUNNING()                      \
+    do {                                               \
+        if (g_pwm_config.state == PWM_STATE_RUNNING) { \
+            return SCPI_ERROR_SETTINGS_CONFLICT;       \
+        }                                              \
     } while (0)
 
 int custom_OUTPUT_STATE(bool state) {
@@ -285,9 +286,12 @@ int custom_SOURCE_PWM_SPEED_QUERY(float *speed) {
     return SCPI_ERROR_NO_ERROR;
 }
 
-int custom_SOURCE_PWM_PHASEN_LS(const unsigned int indices[1], int gpio) {
+int custom_SOURCE_PWM_PHASEN_LS_GPIO(const unsigned int indices[1], int gpio) {
     REQUIRE_OUTPUTS_DISABLED();
     unsigned int phase = indices[0];
+    if (apg_gpio_in_use(-1, gpio)) {
+        return SCPI_ERROR_SETTINGS_CONFLICT; // GPIO is in use by APG
+    }
     if (pwm_gpio_in_use(gpio)) {
         if (gpio == g_pwm_config.phase[phase - 1].gpio_ls) { // Allow re-setting the same GPIO without error
             return SCPI_ERROR_NO_ERROR;
@@ -301,15 +305,18 @@ int custom_SOURCE_PWM_PHASEN_LS(const unsigned int indices[1], int gpio) {
     return SCPI_ERROR_NO_ERROR;
 }
 
-int custom_SOURCE_PWM_PHASEN_LS_QUERY(const unsigned int indices[1], int *gpio) {
+int custom_SOURCE_PWM_PHASEN_LS_GPIO_QUERY(const unsigned int indices[1], int *gpio) {
     unsigned int phase = indices[0];
     *gpio = g_pwm_config.phase[phase - 1].gpio_ls;
     return SCPI_ERROR_NO_ERROR;
 }
 
-int custom_SOURCE_PWM_PHASEN_HS(const unsigned int indices[1], int gpio) {
+int custom_SOURCE_PWM_PHASEN_HS_GPIO(const unsigned int indices[1], int gpio) {
     REQUIRE_OUTPUTS_DISABLED();
     unsigned int phase = indices[0];
+    if (apg_gpio_in_use(-1, gpio)) {
+        return SCPI_ERROR_SETTINGS_CONFLICT; // GPIO is in use by APG
+    }
     if (pwm_gpio_in_use(gpio)) {
         if (gpio == g_pwm_config.phase[phase - 1].gpio_hs) { // Allow re-setting the same GPIO without error
             return SCPI_ERROR_NO_ERROR;
@@ -323,7 +330,7 @@ int custom_SOURCE_PWM_PHASEN_HS(const unsigned int indices[1], int gpio) {
     return SCPI_ERROR_NO_ERROR;
 }
 
-int custom_SOURCE_PWM_PHASEN_HS_QUERY(const unsigned int indices[1], int *gpio) {
+int custom_SOURCE_PWM_PHASEN_HS_GPIO_QUERY(const unsigned int indices[1], int *gpio) {
     unsigned int phase = indices[0];
     *gpio = g_pwm_config.phase[phase - 1].gpio_hs;
     return SCPI_ERROR_NO_ERROR;
@@ -386,5 +393,191 @@ int custom_SOURCE_PWM_PHASEN_HS_IDLE_QUERY(const unsigned int indices[1], bool *
     unsigned int phase = indices[0];
 
     *state = g_pwm_config.phase[phase - 1].hs_idle;
+    return SCPI_ERROR_NO_ERROR;
+}
+
+/**
+ * APG command implementations
+ */
+
+int custom_SOURCE_APG_STATE(bool state) {
+    apg_set_state(state);
+    return SCPI_ERROR_NO_ERROR;
+}
+
+int custom_SOURCE_APG_STATE_QUERY(bool *state) {
+    *state = g_apg_is_enabled;
+    return SCPI_ERROR_NO_ERROR;
+}
+
+static scpi_result_t parse_apg_pairs(scpi_t *context, apg_value_duration_t **out_pairs, size_t *out_count) {
+    if (out_pairs == NULL || out_count == NULL) {
+        return SCPI_RES_ERR;
+    }
+    if (*out_pairs != NULL) {
+        return SCPI_RES_ERR;
+    }
+
+    *out_count = 0;
+
+    size_t count = 0;
+    size_t capacity = 0;
+    scpi_parameter_t param;
+
+    for (;;) {
+        uint32_t value = 0;
+        if (!SCPI_ParamUInt32(context, &value, count == 0 ? TRUE : FALSE)) {
+            if (SCPI_ParamErrorOccurred(context) || (count == 0)) {
+                /* something wrong with the parameter or missing mandatory first parameter */
+                return SCPI_RES_ERR;
+            } else {
+                /* no more parameters */
+                break;
+            }
+        }
+
+        // Value is 24-bit unsigned, so max is 0x00FFFFFF
+        if (value > 0x00FFFFFF) {
+            SCPI_ErrorPush(context, SCPI_ERROR_DATA_OUT_OF_RANGE);
+            return SCPI_RES_ERR;
+        }
+
+        double duration = 0.0;
+        if (!SCPI_ParamDouble(context, &duration, TRUE)) {
+            return SCPI_RES_ERR;
+        }
+        // Minimum duration is 20 ns, maximum is 60 s
+        if (duration < 20.0e-9 || duration > 60.0) {
+            SCPI_ErrorPush(context, SCPI_ERROR_DATA_OUT_OF_RANGE);
+            return SCPI_RES_ERR;
+        }
+
+        if (count == capacity) {
+            size_t next_capacity = capacity + 8u;
+            apg_value_duration_t *next_pairs = realloc(*out_pairs, next_capacity * sizeof(apg_value_duration_t));
+            if (!next_pairs) {
+                SCPI_ErrorPush(context, SCPI_ERROR_OUT_OF_MEMORY);
+                return SCPI_RES_ERR;
+            }
+            *out_pairs = next_pairs;
+            capacity = next_capacity;
+        }
+
+        (*out_pairs)[count].value = value;
+        (*out_pairs)[count].duration_sec = duration;
+        count++;
+    }
+
+    *out_count = count;
+    return SCPI_RES_OK;
+}
+
+scpi_result_t custom_SOURCE_APG_DATA(scpi_t *context) {
+    apg_value_duration_t *pairs = NULL;
+    size_t count = 0;
+
+    if (g_output_state.enabled) {
+        SCPI_ErrorPush(context, SCPI_ERROR_SETTINGS_CONFLICT);
+        return SCPI_RES_ERR;
+    }
+
+    if (parse_apg_pairs(context, &pairs, &count) != SCPI_RES_OK) {
+        free(pairs);
+        return SCPI_RES_ERR;
+    }
+
+    if (apg_write_data(pairs, count, false) != 0) {
+        free(pairs);
+        SCPI_ErrorPush(context, SCPI_ERROR_TOO_MUCH_DATA);
+        return SCPI_RES_ERR;
+    }
+
+    free(pairs);
+    return SCPI_RES_OK;
+}
+
+scpi_result_t custom_SOURCE_APG_DATA_QUERY(scpi_t *context) {
+    apg_value_duration_t *pairs = NULL;
+    size_t count = 0;
+    if (apg_read_data(&pairs, &count) != 0) {
+        free(pairs);
+        SCPI_ErrorPush(context, SCPI_ERROR_OUT_OF_MEMORY);
+        return SCPI_RES_ERR;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        SCPI_ResultUInt32(context, pairs[i].value);
+        SCPI_ResultDouble(context, pairs[i].duration_sec);
+    }
+
+    free(pairs);
+    return SCPI_RES_OK;
+}
+
+scpi_result_t custom_SOURCE_APG_DATA_APPEND(scpi_t *context) {
+    apg_value_duration_t *pairs = NULL;
+    size_t count = 0;
+
+    if (g_output_state.enabled) {
+        SCPI_ErrorPush(context, SCPI_ERROR_SETTINGS_CONFLICT);
+        return SCPI_RES_ERR;
+    }
+
+    if (parse_apg_pairs(context, &pairs, &count) != SCPI_RES_OK) {
+        free(pairs);
+        return SCPI_RES_ERR;
+    }
+
+    if (apg_write_data(pairs, count, true) != 0) {
+        free(pairs);
+        SCPI_ErrorPush(context, SCPI_ERROR_TOO_MUCH_DATA);
+        return SCPI_RES_ERR;
+    }
+
+    free(pairs);
+    return SCPI_RES_OK;
+}
+
+scpi_result_t custom_SOURCE_APG_DATA_POINTS(scpi_t *context) {
+    SCPI_ResultUInt32(context, (uint32_t)g_apg_data_count);
+    return SCPI_RES_OK;
+}
+
+int custom_SOURCE_APG_IDLE_MODE(SOURCE_APG_IDLE_MODE_IDLE_MODE_t idle_mode) {
+    g_apg_idle_mode = idle_mode;
+    apg_update_idle();
+    return SCPI_ERROR_NO_ERROR;
+}
+
+int custom_SOURCE_APG_IDLE_MODE_QUERY(SOURCE_APG_IDLE_MODE_IDLE_MODE_t *idle_mode) {
+    *idle_mode = g_apg_idle_mode;
+    return SCPI_ERROR_NO_ERROR;
+}
+
+int custom_SOURCE_APG_IDLE_VALUE(unsigned int idle_value) {
+    g_apg_idle_value = idle_value;
+    apg_update_idle();
+    return SCPI_ERROR_NO_ERROR;
+}
+
+int custom_SOURCE_APG_IDLE_VALUE_QUERY(unsigned int *idle_value) {
+    *idle_value = g_apg_idle_value;
+    return SCPI_ERROR_NO_ERROR;
+}
+
+int custom_SOURCE_APG_MAP_BITN_GPIO(const unsigned int indices[1], int gpio) {
+    REQUIRE_OUTPUTS_DISABLED();
+
+    if (pwm_gpio_in_use(gpio) || apg_gpio_in_use(indices[0], gpio)) {
+        return SCPI_ERROR_SETTINGS_CONFLICT;
+    }
+
+    apg_set_mapping(indices[0], gpio);
+
+    return SCPI_ERROR_NO_ERROR;
+}
+
+int custom_SOURCE_APG_MAP_BITN_GPIO_QUERY(const unsigned int indices[1], int *gpio) {
+    apg_get_mapping(indices[0], gpio);
     return SCPI_ERROR_NO_ERROR;
 }

@@ -1,34 +1,45 @@
 /*
+ * Copyright (c) 2026 honsma235
+ * SPDX-License-Identifier: GPL-2.0-only
+ *
+ * See the repository LICENSE file for the full text.
+ *
  * Core1 entry point wrapper
  */
 
-#include "main_core1.h"
-
-#include "output.h"
-#include "pwm/pwm.h"
-#include "trigger.h"
 #include "pico.h"
 
+#include "apg/apg.h"
+#include "pwm/pwm.h"
+
+#include "main_core1.h"
+#include "output.h"
+#include "trigger.h"
+
+void init_all() {
+    output_init();
+    trigger_init();
+    pwm_init_module();
+    apg_init_module();
+}
+
 void abort_all(void) {
-    pwm_abort();
     trigger_abort();
+    pwm_abort();
+    apg_abort();
 }
 
 void reset_to_defaults_all(void) {
-    output_init();
-
+    g_output_state.enabled = false;
+    output_apply_state();
     abort_all();
-
-    trigger_init();
-    pwm_init_module();
+    init_all();
 }
 
 void main_core1_entry(void) {
-    // Initialize trigger manager, PWM configuration, and output state
-    reset_to_defaults_all();
+    init_all();
 
     while (true) {
         tight_loop_contents();
     }
 }
-

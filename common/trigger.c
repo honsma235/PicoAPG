@@ -1,10 +1,16 @@
 /*
- * Central trigger manager (initial skeleton)
+ * Copyright (c) 2026 honsma235
+ * SPDX-License-Identifier: GPL-2.0-only
+ *
+ * See the repository LICENSE file for the full text.
+ *
+ * Central trigger manager
  */
 
 #include "pico/time.h"
 
 #include "pwm/pwm.h"
+#include "apg/apg.h"
 #include "trigger.h"
 
 trigger_config_t g_trigger_config;
@@ -13,14 +19,17 @@ static repeating_timer_t s_int_timer;
 static bool s_int_timer_active = false;
 static alarm_id_t s_delay_alarm = -1;
 
+
 void trigger_init(void) {
     g_trigger_config.source = TRG_SOURCE_BUS;
     g_trigger_config.burst_type = BURST_MODE_CONTINUOUS;
     g_trigger_config.delay_sec = 0.0f;
-    g_trigger_config.interval_sec = 0.0f;
+    g_trigger_config.interval_sec = 1.0f;
     g_trigger_config.burst_ncycles = 1;
     g_trigger_config.burst_duration_sec = 0.01f;
-    g_trigger_config.alarm_pool = alarm_pool_create_with_unused_hardware_alarm(16);
+    if (g_trigger_config.alarm_pool == NULL) {
+        g_trigger_config.alarm_pool = alarm_pool_create_with_unused_hardware_alarm(16);
+    }
 
     s_int_timer_active = false;
     s_delay_alarm = -1;
@@ -32,6 +41,7 @@ void trigger_init(void) {
 static void trigger_dispatch_all(void) {
     /* Hardcoded dispatch for now; add APG or others when available. */
     pwm_trigger_start();
+    apg_trigger_start();
 }
 
 static int64_t trigger_alarm_cb(alarm_id_t id, void *user_data) {

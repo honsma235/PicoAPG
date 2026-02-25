@@ -70,11 +70,15 @@ add_executable(${PROJECT_NAME}
     common/main_core1.c
     common/output.c
     common/trigger.c
+    apg/apg.c
+    apg/apg_data.c
     pwm/pwm.c
     pwm/pwm_gpio.c
     pwm/pwm_irq.c
     ${PICO_TINYUSB_PATH}/lib/networking/rndis_reports.c
 )
+
+pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/apg/apg.pio)
 
 pico_set_program_name(${PROJECT_NAME} "PicoAPG")
 pico_set_program_version(${PROJECT_NAME} "0.1")
@@ -90,6 +94,8 @@ target_link_libraries(${PROJECT_NAME}
         pico_bootsel_via_double_reset   # broken in SDK 2.2.0 on Pico 2
         pico_multicore
         pico_time
+    hardware_dma
+    hardware_pio
         hardware_pwm
         hardware_gpio
         hardware_irq

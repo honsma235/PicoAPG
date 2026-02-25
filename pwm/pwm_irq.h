@@ -2,7 +2,7 @@
  * Copyright (c) 2026 honsma235
  * SPDX-License-Identifier: GPL-2.0-only
  *
- * PWM IRQ Handler Header
+ * See the repository LICENSE file for the full text.
  */
 
 #ifndef PWM_IRQ_H
@@ -20,7 +20,6 @@ extern "C" {
  * avoid a long first IRQ entry.
  */
 void pwm_irq_prime(void);
-
 
 void pwm_irq_init(void);
 

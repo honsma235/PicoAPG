@@ -216,6 +216,11 @@ def has_multiple_params(params):
     return len(params) > 1
 
 
+def has_custom_params(params):
+    """Check if any parameter is a custom type"""
+    return any(p.get("type") == "custom" for p in params)
+
+
 def generate_enum_choices_code(cmd_entry):
     """Generate choice list definitions for enum parameters in a command.
     Returns list of code lines."""
@@ -263,8 +268,10 @@ def generate_function_prototypes(docs):
         cmd = cmd_entry.get("command", "")
         params = cmd_entry.get("params", [])
         indices = cmd_entry.get("indices", [])
-        has_query = cmd_entry.get("has_query", False)
         is_query_only = is_query(cmd)
+        has_query = cmd_entry.get("has_query", False) or is_query_only
+        query_only_no_params = is_query_only and not params
+        has_custom = has_custom_params(params) or query_only_no_params
         
         ident = safe_ident(cmd)
         has_indices = len(indices) > 0
@@ -272,43 +279,59 @@ def generate_function_prototypes(docs):
         
         if is_query_only:
             # Query-only
-            if not params:
-                continue
             lines.append(f"/* Query-only: {cmd} */")
             parts = []
-            if indices:
-                parts.append(f"const unsigned int indices[{len(indices)}]")
-            for param in params:
-                ctype = get_param_type_c_for_param(ident, param)
-                pname = param.get("name", "")
-                parts.append(f"{ctype} *{pname}")
-            lines.append(f"int custom_{ident}({', '.join(parts)});")
-        else:
-            # Event handler
-            lines.append(f"/* Event: {cmd} */")
-            parts = []
-            if has_indices:
-                parts.append(f"const unsigned int indices[{len(indices)}]")
-            if has_params:
-                for param in params:
-                    ctype = get_param_type_c_for_param(ident, param)
-                    pname = param.get("name", "")
-                    parts.append(f"{ctype} {pname}")
-            if not parts:
-                parts.append("void")
-            lines.append(f"int custom_{ident}({', '.join(parts)});")
-            
-            # Query handler (if has_query)
-            if has_query and has_params:
-                lines.append(f"/* Query: {cmd}? */")
-                parts = []
-                if has_indices:
+            if has_custom:
+                parts.append("scpi_t *context")
+                if indices:
+                    parts.append(f"const unsigned int indices[{len(indices)}]")
+            else:
+                if indices:
                     parts.append(f"const unsigned int indices[{len(indices)}]")
                 for param in params:
                     ctype = get_param_type_c_for_param(ident, param)
                     pname = param.get("name", "")
                     parts.append(f"{ctype} *{pname}")
-                lines.append(f"int custom_{ident}_QUERY({', '.join(parts)});")
+            ret_type = "scpi_result_t" if has_custom else "int"
+            lines.append(f"{ret_type} custom_{ident}({', '.join(parts)});")
+        else:
+            # Event handler
+            lines.append(f"/* Event: {cmd} */")
+            parts = []
+            if has_custom:
+                parts.append("scpi_t *context")
+                if has_indices:
+                    parts.append(f"const unsigned int indices[{len(indices)}]")
+            else:
+                if has_indices:
+                    parts.append(f"const unsigned int indices[{len(indices)}]")
+                if has_params:
+                    for param in params:
+                        ctype = get_param_type_c_for_param(ident, param)
+                        pname = param.get("name", "")
+                        parts.append(f"{ctype} {pname}")
+            if not parts:
+                parts.append("void")
+            ret_type = "scpi_result_t" if has_custom else "int"
+            lines.append(f"{ret_type} custom_{ident}({', '.join(parts)});")
+            
+            # Query handler (if has_query)
+            if has_query:
+                lines.append(f"/* Query: {cmd}? */")
+                parts = []
+                if has_custom:
+                    parts.append("scpi_t *context")
+                    if has_indices:
+                        parts.append(f"const unsigned int indices[{len(indices)}]")
+                else:
+                    if has_indices:
+                        parts.append(f"const unsigned int indices[{len(indices)}]")
+                    for param in params:
+                        ctype = get_param_type_c_for_param(ident, param)
+                        pname = param.get("name", "")
+                        parts.append(f"{ctype} *{pname}")
+                ret_type = "scpi_result_t" if has_custom else "int"
+                lines.append(f"{ret_type} custom_{ident}_QUERY({', '.join(parts)});")
         
         lines.append("")
     
@@ -317,13 +340,29 @@ def generate_function_prototypes(docs):
 
 def gen_md(docs, out):
     """Generate Markdown documentation"""
+    def escape_md_text(text):
+        if text is None:
+            return ""
+        text = text.replace("\\", "\\\\")
+        text = text.replace("<", "\\<")
+        text = text.replace(">", "\\>")
+        text = text.replace("|", "\\|")
+        text = text.replace("`", "\\`")
+        text = text.replace("*", "\\*")
+        text = text.replace("_", "\\_")
+        text = text.replace("[", "\\[")
+        text = text.replace("]", "\\]")
+        text = text.replace("(", "\\(")
+        text = text.replace(")", "\\)")
+        return text
+
     out.write("# SCPI Command Reference for PICO APG\n\n")
     out.write("| Command | Parameters | Description | Details | Default | Status |\n")
     out.write("|---|---|---|---|---|---|\n")
     
     for c in docs:
         cmd = c.get("command", "")
-        desc = c.get("description", "")
+        desc = escape_md_text(c.get("description", ""))
         status = c.get("status", "")
         
                 
@@ -355,7 +394,7 @@ def gen_md(docs, out):
         
         # Build details column: base details + MIN/MAX for value types
         detail_parts = []
-        base = c.get("details", "")
+        base = escape_md_text(c.get("details", ""))
         if base:
             detail_parts.append(base.replace("; ", "<br>"))
         
@@ -406,9 +445,10 @@ def gen_header(docs, header_path, c_path):
     # Forward declare all handlers
     for cmd_entry in docs:
         cmd = cmd_entry.get("command", "")
-        has_query = cmd_entry.get("has_query", False)
+        query_only = is_query(cmd)
+        has_query = cmd_entry.get("has_query", False) or query_only
         
-        if not is_query(cmd):
+        if not query_only:
             ident = safe_ident(cmd)
             lines.append(f"scpi_result_t handler_{ident}(scpi_t *context);")
             if has_query:
@@ -425,12 +465,13 @@ def gen_header(docs, header_path, c_path):
     # Build macro entries
     for cmd_entry in docs:
         cmd = cmd_entry.get("command", "")
-        has_query = cmd_entry.get("has_query", False)
+        query_only = is_query(cmd)
+        has_query = cmd_entry.get("has_query", False) or query_only
         
         # Convert <n> to # for SCPI pattern matching
         pattern = re.sub(r'<[^>]+>', '#', cmd)
         
-        if not is_query(cmd):
+        if not query_only:
             ident = safe_ident(cmd)
             lines.append(f"    {{ .pattern = \"{pattern}\", .callback = handler_{ident} }}, \\")
             if has_query:
@@ -590,28 +631,39 @@ def gen_c_handlers(docs, c_path):
         
         params = cmd_entry.get("params", [])
         indices = cmd_entry.get("indices", [])
-        has_query = cmd_entry.get("has_query", False)
         is_query_only = is_query(cmd)
+        has_query = cmd_entry.get("has_query", False) or is_query_only
+        query_only_no_params = is_query_only and not params
+        has_custom = has_custom_params(params) or query_only_no_params
         
         if is_query_only:
             if not params:
                 continue  # Skip query-only without response
             ident = safe_ident(cmd)
             parts = []
-            if indices:
-                parts.append(f"const unsigned int indices[{len(indices)}]")
-            for param in params:
-                ctype = get_param_type_c_for_param(ident, param)
-                pname = param.get("name", "")
-                parts.append(f"{ctype} *{pname}")
+            if has_custom:
+                parts.append("scpi_t *context")
+                if indices:
+                    parts.append(f"const unsigned int indices[{len(indices)}]")
+            else:
+                if indices:
+                    parts.append(f"const unsigned int indices[{len(indices)}]")
+                for param in params:
+                    ctype = get_param_type_c_for_param(ident, param)
+                    pname = param.get("name", "")
+                    parts.append(f"{ctype} *{pname}")
             
             # Non-weak stub for planned (unimplemented) command
-            lines.append(f"int custom_{ident}({', '.join(parts)}) {{")
+            ret_type = "scpi_result_t" if has_custom else "int"
+            lines.append(f"{ret_type} custom_{ident}({', '.join(parts)}) {{")
+            if has_custom:
+                lines.append(f"    (void)context;")
             if indices:
                 lines.append(f"    (void)indices;")
-            for param in params:
-                pname = param.get("name", "")
-                lines.append(f"    (void){pname};")
+            if not has_custom:
+                for param in params:
+                    pname = param.get("name", "")
+                    lines.append(f"    (void){pname};")
             lines.append(f"    return SCPI_ERROR_EXECUTION_ERROR; /* Not implemented */")
             lines.append(f"}}\n")
         else:
@@ -621,21 +673,29 @@ def gen_c_handlers(docs, c_path):
             
             # Event stub
             parts = []
-            if has_indices:
-                parts.append(f"const unsigned int indices[{len(indices)}]")
-            if has_params:
-                for param in params:
-                    ctype = get_param_type_c_for_param(ident, param)
-                    pname = param.get("name", "")
-                    parts.append(f"{ctype} {pname}")
+            if has_custom:
+                parts.append("scpi_t *context")
+                if has_indices:
+                    parts.append(f"const unsigned int indices[{len(indices)}]")
+            else:
+                if has_indices:
+                    parts.append(f"const unsigned int indices[{len(indices)}]")
+                if has_params:
+                    for param in params:
+                        ctype = get_param_type_c_for_param(ident, param)
+                        pname = param.get("name", "")
+                        parts.append(f"{ctype} {pname}")
             if not parts:
                 parts.append("void")
             
             # Non-weak stub for planned (unimplemented) command
-            lines.append(f"int custom_{ident}({', '.join(parts)}) {{")
+            ret_type = "scpi_result_t" if has_custom else "int"
+            lines.append(f"{ret_type} custom_{ident}({', '.join(parts)}) {{")
+            if has_custom:
+                lines.append(f"    (void)context;")
             if has_indices:
                 lines.append(f"    (void)indices;")
-            if has_params:
+            if has_params and not has_custom:
                 for param in params:
                     pname = param.get("name", "")
                     lines.append(f"    (void){pname};")
@@ -643,22 +703,31 @@ def gen_c_handlers(docs, c_path):
             lines.append(f"}}\n")
             
             # Query stub (if has_query)
-            if has_query and has_params:
+            if has_query:
                 parts = []
-                if has_indices:
-                    parts.append(f"const unsigned int indices[{len(indices)}]")
-                for param in params:
-                    ctype = get_param_type_c_for_param(ident, param)
-                    pname = param.get("name", "")
-                    parts.append(f"{ctype} *{pname}")
+                if has_custom:
+                    parts.append("scpi_t *context")
+                    if has_indices:
+                        parts.append(f"const unsigned int indices[{len(indices)}]")
+                else:
+                    if has_indices:
+                        parts.append(f"const unsigned int indices[{len(indices)}]")
+                    for param in params:
+                        ctype = get_param_type_c_for_param(ident, param)
+                        pname = param.get("name", "")
+                        parts.append(f"{ctype} *{pname}")
                 
                 # Non-weak stub for planned (unimplemented) command
-                lines.append(f"int custom_{ident}_QUERY({', '.join(parts)}) {{")
+                ret_type = "scpi_result_t" if has_custom else "int"
+                lines.append(f"{ret_type} custom_{ident}_QUERY({', '.join(parts)}) {{")
+                if has_custom:
+                    lines.append(f"    (void)context;")
                 if has_indices:
                     lines.append(f"    (void)indices;")
-                for param in params:
-                    pname = param.get("name", "")
-                    lines.append(f"    (void){pname};")
+                if not has_custom:
+                    for param in params:
+                        pname = param.get("name", "")
+                        lines.append(f"    (void){pname};")
                 lines.append(f"    return SCPI_ERROR_EXECUTION_ERROR; /* Not implemented */")
                 lines.append(f"}}\n")
     
@@ -671,8 +740,10 @@ def gen_c_handlers(docs, c_path):
         cmd = cmd_entry.get("command", "")
         params = cmd_entry.get("params", [])
         indices = cmd_entry.get("indices", [])
-        has_query = cmd_entry.get("has_query", False)
         is_query_only = is_query(cmd)
+        has_query = cmd_entry.get("has_query", False) or is_query_only
+        query_only_no_params = is_query_only and not params
+        has_custom = has_custom_params(params) or query_only_no_params
         
         if is_query_only and not has_query:
             continue  # Skip query-only without response
@@ -687,11 +758,11 @@ def gen_c_handlers(docs, c_path):
         
         if not is_query_only:
             handlers_to_gen.append(("event", False))
-            if has_query and has_params:
+            if has_query:
                 handlers_to_gen.append(("query", True))
         else:
             # Query-only
-            if has_params:
+            if has_query:
                 handlers_to_gen.append(("query", True))
         
         for handler_type, is_response_query in handlers_to_gen:
@@ -703,14 +774,15 @@ def gen_c_handlers(docs, c_path):
                 lines.append(f"scpi_result_t handler_{ident}{suffix}(scpi_t *context) {{")
             
             # Declare variables
-            if has_params:
+            if has_params and not has_custom:
                 for param in params:
                     ctype = get_param_type_c_for_param(ident, param)
                     pname = param.get("name", "")
                     lines.append(f"    {ctype} {pname} = 0;")
             if has_indices:
                 lines.append(f"    unsigned int indices[{len(indices)}] = {{0}};")
-            lines.append(f"    int result;")
+            result_type = "scpi_result_t" if has_custom else "int"
+            lines.append(f"    {result_type} result;")
             lines.append("")
             
             # Extract and validate indices
@@ -718,7 +790,11 @@ def gen_c_handlers(docs, c_path):
             
             # Parse and validate parameters (only for EVENT handlers, not QUERY)
             if handler_type == "event":
-                lines.extend(generate_param_parsing_code(ident, params))
+                if has_custom:
+                    lines.append("    /* Parameter parsing delegated to custom handler */")
+                    lines.append("")
+                else:
+                    lines.extend(generate_param_parsing_code(ident, params))
             
             # Call custom hook
             if handler_type == "event":
@@ -727,14 +803,19 @@ def gen_c_handlers(docs, c_path):
                 lines.append(f"    /* Call custom query implementation */")
             
             args = []
-            if has_indices:
-                args.append("indices")
-            if has_params:
-                for param in params:
-                    if handler_type == "event":
-                        args.append(param.get("name", ""))
-                    else:
-                        args.append(f"&{param.get('name', '')}")
+            if has_custom:
+                args.append("context")
+                if has_indices:
+                    args.append("indices")
+            else:
+                if has_indices:
+                    args.append("indices")
+                if has_params:
+                    for param in params:
+                        if handler_type == "event":
+                            args.append(param.get("name", ""))
+                        else:
+                            args.append(f"&{param.get('name', '')}")
             
             if handler_type == "event":
                 custom_func = f"custom_{ident}"
@@ -746,17 +827,28 @@ def gen_c_handlers(docs, c_path):
             else:
                 lines.append(f"    result = {custom_func}();")
             
-            lines.append(f"    if (result < 0) {{")
-            lines.append(f"        SCPI_ErrorPush(context, result);")
-            lines.append(f"        return SCPI_RES_ERR;")
-            lines.append(f"    }}")
-            lines.append("")
+            if has_custom:
+                lines.append(f"    return result;")
+                lines.append("")
+            else:
+                lines.append(f"    if (result < 0) {{")
+                lines.append(f"        SCPI_ErrorPush(context, result);")
+                lines.append(f"        return SCPI_RES_ERR;")
+                lines.append(f"    }}")
+                lines.append("")
             
             # Format response if query
             if handler_type == "query":
-                lines.extend(generate_response_formatting_code(ident, params))
+                if has_custom:
+                    lines.append("    /* Response formatting delegated to custom handler */")
+                    lines.append("")
+                else:
+                    lines.extend(generate_response_formatting_code(ident, params))
             
-            lines.append(f"    return SCPI_RES_OK;")
+            if has_custom:
+                lines.append(f"    return SCPI_RES_OK;")
+            else:
+                lines.append(f"    return SCPI_RES_OK;")
             lines.append(f"}}\n")
     
     with open(c_path, "w", newline="\n") as f:

@@ -1,0 +1,53 @@
+;
+; Copyright (c) 2026 honsma235
+; SPDX-License-Identifier: GPL-2.0-only
+;
+; See the repository LICENSE file for the full text.
+;
+
+.pio_version 0          ; only requires PIO version 0
+
+
+.program apg
+.fifo tx                ; all 8 FIFO entries for TX (output)
+.out 32 auto            ; enable autopull, 32 bit
+
+; Main APG PIO program
+; Expects 32-bit value and duration pairs in the TX FIFO.
+; Applys the value to the pins for the specified duration (in cycles).
+; The duration is extended by 3 cycles, due to the instruction timing.
+; If no more data is available in the FIFO, the last value will be held indefinitely.
+
+.wrap_target
+    out pins, 32        ; autopulls (value) and write to pins
+    out x, 32           ; autopulls (duration) and save to X
+countdown:
+    jmp x-- countdown   ; loop until X is zero
+.wrap
+
+
+.program apg_burst
+.in 32 auto             ; enable autopush, 32 bit
+
+; Burst mode PIO program
+; Used for n-cycle bursts.
+; Expects N, value1, value2, value3, value4 in the TX FIFO (all 32 bit).
+; Writes to RX FIFO value1 and value2 alternating for N cycles, then value3 and value4 once each, then halts forever.
+; This is usefull for generating DMA "control blocks" for n-cycle bursts, with an final idle value at the end.
+
+    pull block
+    mov y, osr          ; save N in Y for idle loop
+    pull block
+    mov x, osr          ; save value1 in X
+    pull block          ; save value2 in OSR
+loop:
+    in x,32             ; emit value1  
+    in osr, 32          ; emit value2
+    jmp y-- loop        ; repeat N times
+
+    pull block          ; get value3
+    in osr, 32          ; emit value3
+    pull block          ; get value4          
+    in osr, 32          ; emit value4
+done:
+    jmp done            ; done

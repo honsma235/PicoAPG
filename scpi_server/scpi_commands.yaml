@@ -97,7 +97,7 @@
       min: 0.0001
       max: 3600.0
       default: 0.01
-  details: "Time in seconds to run burst before auto-stopping (used with burst type DURation)"
+  details: "Time in seconds to run burst before auto-stopping (used with burst type DURation); Note: only accurate to a few microseconds."
 
 - command: ":SOURce:BURSt:INTerval"
   has_query: true
@@ -178,7 +178,7 @@
       default: 0.05
   details: "Maximum is symmetrically limited to (1.0 - MIN).; Will be enforced in MOD_xx control modes too.; Requires PWM stopped to change."
 
-- command: ":SOURce:PWM:PHase<n>:LS"
+- command: ":SOURce:PWM:PHase<n>:LS:GPIO"
   has_query: true
   indices:
     - name: "n"
@@ -190,9 +190,9 @@
       min: -1
       max: 22
       default: -1
-  details: "GPIO pin number; Use -1 for unused (will be set to input/Hi-Z).; The 16 available PWM channels are mapped to GPIO 0–15 and mirrored on GPIO 16–31. Consequently, GPIO n and GPIO n+16 are linked to the same channel and cannot be controlled independently.; Requires outputs OFF to change."
+  details: "GPIO pin number to use for the specified PWM low-side channel; Use -1 for unused (will be set to input/Hi-Z).; The 16 available PWM channels are mapped to GPIO 0–15 and mirrored on GPIO 16–31. Consequently, GPIO n and GPIO n+16 are linked to the same channel and cannot be controlled independently.; Requires outputs OFF to change."
 
-- command: ":SOURce:PWM:PHase<n>:HS"
+- command: ":SOURce:PWM:PHase<n>:HS:GPIO"
   has_query: true
   indices:
     - name: "n"
@@ -204,7 +204,7 @@
       min: -1
       max: 22
       default: -1
-  details: "GPIO pin number; Use -1 for unused (will be set to input/Hi-Z).; The 16 available PWM channels are mapped to GPIO 0–15 and mirrored on GPIO 16–31. Consequently, GPIO n and GPIO n+16 are linked to the same channel and cannot be controlled independently.; Requires outputs OFF to change."
+  details: "GPIO pin number to use for the specified PWM high-side channel; Use -1 for unused (will be set to input/Hi-Z).; The 16 available PWM channels are mapped to GPIO 0–15 and mirrored on GPIO 16–31. Consequently, GPIO n and GPIO n+16 are linked to the same channel and cannot be controlled independently.; Requires outputs OFF to change."
 
 - command: ":SOURce:PWM:PHase<n>:LS:INVert"
   has_query: true
@@ -303,3 +303,70 @@
       default: 1
   details: "Rotation speed of SPWM phase in Hz (one rotation per second); Must be <= :SOURce:PWM:FREQuency/2."
 
+# ============================================================================
+# APG Configuration Commands
+# ============================================================================
+
+- command: ":SOURce:APG:STATe"
+  has_query: true
+  description: "Enable/disable APG pattern generation"
+  params:
+    - name: "state"
+      type: "bool"
+      default: false
+  details: "ON: APG pattern generation enabled; OFF: APG pattern generation disabled;"
+
+- command: ":SOURce:APG:DATA"
+  has_query: true
+  description: "Set/Query APG pattern data"
+  params:
+    - name: "value_duration_pairs"
+      type: "custom"
+  details: "List of comma-separated <value>,<duration>,... pairs.; <value> is 24-bit unsigned (decimal, #H hex, #Q octal or #B binary).; <duration> in seconds (resolution ~7 ns, min. 20 ns, max 60 s).; Note: if the last two durations are less then 120ns combined, the last one will get streched.; Example: '123,0.01,#B10,50E-6' means value 123 for 10ms then value 2 for 50µs.; Requires outputs OFF to change."
+
+- command: ":SOURce:APG:DATA:APPend"
+  has_query: false
+  description: "Append APG pattern data"
+  params:
+    - name: "value_pair_list"
+      type: "custom"
+  details: "Same format as :SOURce:APG:DATA; Appends to end of current pattern instead of replacing it.; Requires outputs OFF to change."
+
+- command: ":SOURce:APG:DATA:POINts?"
+  description: "Query APG point count"
+  details: "Returns the number of points in the current APG pattern"
+
+- command: ":SOURce:APG:IDLE:MODE"
+  has_query: true
+  description: "Set/Query APG idle mode"
+  params:
+    - name: "idle_mode"
+      type: "enum"
+      values: ["VALue", "FIRSt", "LAST"]
+      default: "VALue"
+  details: "Which value to use when APG is idle.; VALue: use :SOURce:APG:IDLE:VALue; FIRSt: use first pattern value; LAST: use last pattern value; Note if no pattern data is set, VALue will be used regardless of this setting."
+
+- command: ":SOURce:APG:IDLE:VALue"
+  has_query: true
+  description: "Set/Query APG idle value"
+  params:
+    - name: "idle_value"
+      type: "uint"
+      min: 0
+      max: 0x00FFFFFF
+      default: 0
+  details: "Value used when APG is idle (not running)"
+
+- command: ":SOURce:APG:MAP:BIT<n>:GPIO"
+  has_query: true
+  indices:
+    - name: "n"
+      range: "0-23"
+  description: "Set/Query GPIO mapping for APG bit"
+  params:
+    - name: "gpio"
+      type: "int"
+      min: -1
+      max: 22
+      default: -1
+  details: "Maps bit n of the pattern values to GPIO number provided.; Use -1 for unused (will be set to input/Hi-Z).; Example: ':SOURce:APG:MAP:BIT2:GPIO 5' will map the 3th bit of the pattern values to GPIO 5.; Requires outputs OFF to change."
